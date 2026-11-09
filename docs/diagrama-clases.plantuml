@@ -1,0 +1,59 @@
+@startuml diagrama de clases
+class Main{
+    
+}
+class RedPetri {
+
+
+}
+'Necesitamos 3 clases que hereden de worker, para cada tipo procesamiento
+class Worker{      
+
+}
+
+class Politica{
+
+
+}
+
+class Monitor{
+
+
+}
+
+class Mutex{
+
+}
+
+class Colas{
+
+
+}
+class Admision{
+
+}
+
+class Salida{
+
+}
+
+'Cada vez que se dispara una transicion en un archivo hay que imprimir la info de la trans, cual es y cuando.
+class Log {
+
+} 
+
+class Regex{
+
+}
+'Configuracion de todos los pagos, es como el "contexto"
+class ConfigPagos{
+
+}
+
+class PipelineCoordinator{
+
+}
+
+class InvariantChecker{
+
+}
