@@ -1,59 +1,103 @@
-@startuml diagrama de clases
-class Main{
-    
+@startuml Diagrama de Clases - TP Final PCyP 2026
+
+class Main {
+  + {static} main(args: String[]): void
 }
+
 class RedPetri {
-
-
-}
-'Necesitamos 3 clases que hereden de worker, para cada tipo procesamiento
-class Worker{      
-
-}
-
-class Politica{
-
-
+  - int[][] I
+  - int[][] IMinus
+  - int[] marcado
+  + RedPetri(iMinus: int[][], iPlus: int[][], marcadoInicial: int[])
+  + isSensitised(t: int): boolean
+  + fire(t: int): boolean
+  + checkPlaceInvariants(): boolean
+  + getTransicionesCount(): int
+  + getMarcadoActual(): int[]
 }
 
-class Monitor{
-
-
+interface MonitorInterface {
+  + {abstract} fireTransition(transition: int): boolean
 }
 
-class Mutex{
-
+class Monitor implements MonitorInterface {
+  - redPetri: RedPetri
+  - politica: Politica
+  - lock: ReentrantLock
+  - conditionQueue: Condition[]
+  - alphaTimes: long[]
+  - timeStampSensitised: long[]
+  - logger: Logger
+  - isStopped: boolean
+  + Monitor(redPetri: RedPetri, politica: Politica, alphaTimes: long[], logger: Logger)
+  + fireTransition(transition: int): boolean
+  + stop(): void
+  - getWaitingSensitisedTransitions(): boolean[]
+  - updateSensitisedTimestamps(): void
 }
 
-class Colas{
-
-
-}
-class Admision{
-
+interface Politica {
+  + {abstract} selectNextTransition(availableTransitions: boolean[]): int
 }
 
-class Salida{
-
+class RandomPolicy implements Politica {
+  - random: Random
+  + selectNextTransition(availableTransitions: boolean[]): int
 }
 
-'Cada vez que se dispara una transicion en un archivo hay que imprimir la info de la trans, cual es y cuando.
-class Log {
-
-} 
-
-class Regex{
-
-}
-'Configuracion de todos los pagos, es como el "contexto"
-class ConfigPagos{
-
+class PriorityPolicy implements Politica {
+  + selectNextTransition(availableTransitions: boolean[]): int
 }
 
-class PipelineCoordinator{
-
+abstract class Worker implements Runnable {
+  # monitor: MonitorInterface
+  # transitionsSequence: int[]
+  # isRunning: boolean
+  + Worker(monitor: MonitorInterface, transitionsSequence: int[])
+  + run(): void
+  + stopWorker(): void
 }
 
-class InvariantChecker{
-
+class AdmisionWorker extends Worker {
+  + AdmisionWorker(monitor: MonitorInterface)
 }
+
+class TarjetaWorker extends Worker {
+  + TarjetaWorker(monitor: MonitorInterface)
+}
+
+class AltoRiesgoWorker extends Worker {
+  + AltoRiesgoWorker(monitor: MonitorInterface)
+}
+
+class TransferenciaWorker extends Worker {
+  + TransferenciaWorker(monitor: MonitorInterface)
+}
+
+class SalidaWorker extends Worker {
+  + SalidaWorker(monitor: MonitorInterface)
+}
+
+class Logger {
+  - logFilePath: String
+  - invCount: int
+  + Logger(logFilePath: String)
+  + synchronized logTransition(t: int): void
+  + getInvariantsCompletedCount(): int
+}
+
+class InvariantChecker {
+  + {static} verifyTransitionInvariants(logFilePath: String): boolean
+}
+
+' Relaciones principales
+Monitor --> RedPetri : interactúa con >
+Monitor --> Politica : consulta >
+Monitor o-- Logger : notifica >
+Worker --> MonitorInterface : invoca fireTransition() >
+Main ..> Monitor : instancia
+Main ..> RedPetri : instancia
+Main ..> Worker : gestiona hilos
+Main ..> InvariantChecker : invoca post-ejecución
+
+@enduml
