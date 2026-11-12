@@ -4,100 +4,227 @@ class Main {
   + {static} main(args: String[]): void
 }
 
+class ConfigPagos {
+  - iMinus : int[][]
+  - iPlus : int[][]
+  - marcadoInicial : int[]
+  - alphaTimes : long[]
+  - placeInvariants : int[][]
+  - placeConstants : int[]
+  - entryTransition : int
+  - exitTransition : int
+  - targetInvariants : int = 200
+  - logFilePath : String
+  + getIMinus(): int[][]
+  + getIPlus(): int[][]
+  + getMarcadoInicial(): int[]
+  + getAlphaTimes(): long[]
+  + getPlaceInvariants(): int[][]
+  + getPlaceConstants(): int[]
+  + getEntryTransition(): int
+  + getExitTransition(): int
+  + getTargetInvariants(): int
+  + getLogFilePath(): String
+}
+
 class RedPetri {
-  - int[][] I
-  - int[][] IMinus
-  - int[] marcado
-  + RedPetri(iMinus: int[][], iPlus: int[][], marcadoInicial: int[])
+  - I : int[][]
+  - IMinus : int[][]
+  - marcado : int[]
+  - fireCount : int[]
+  - placeInvariants : int[][]
+  - placeConstants : int[]
+  - entryTransition : int
+  - exitTransition : int
+  - targetInvariants : int
+  + RedPetri(config: ConfigPagos)
   + isSensitised(t: int): boolean
-  + fire(t: int): boolean
-  + checkPlaceInvariants(): boolean
+  + getSensitisedTransitions(): boolean[]
+  + fire(t: int): void
+  + isFinished(): boolean
   + getTransicionesCount(): int
   + getMarcadoActual(): int[]
+  - checkPlaceInvariants(): boolean
 }
+
+note right of RedPetri
+  isSensitised(entryTransition) devuelve false
+  cuando fireCount[T0] llega a targetInvariants (200):
+  así no quedan invariantes incompletos en el log.
+  isFinished(): fireCount[T9] == targetInvariants.
+  fire() llama a checkPlaceInvariants()
+  después de cada disparo (req. 12).
+end note
 
 interface MonitorInterface {
   + {abstract} fireTransition(transition: int): boolean
 }
 
 class Monitor implements MonitorInterface {
-  - redPetri: RedPetri
-  - politica: Politica
-  - lock: ReentrantLock
-  - conditionQueue: Condition[]
-  - alphaTimes: long[]
-  - timeStampSensitised: long[]
-  - logger: Logger
-  - isStopped: boolean
-  + Monitor(redPetri: RedPetri, politica: Politica, alphaTimes: long[], logger: Logger)
+  - redPetri : RedPetri
+  - politica : Politica
+  - mutex : Mutex
+  - colas : Colas
+  - logger : Logger
+  + Monitor(redPetri: RedPetri, politica: Politica, logger: Logger)
   + fireTransition(transition: int): boolean
-  + stop(): void
   - getWaitingSensitisedTransitions(): boolean[]
-  - updateSensitisedTimestamps(): void
+  - signalNext(): void
+  - liberarTodos(): void
 }
+
+note right of Monitor
+  fireTransition() es el único método público.
+  El monitor es agnóstico a la red: no conoce
+  plazas, transiciones ni tiempos concretos.
+  signalNext(): despierta a un hilo y le pasa
+  el mutex, o libera el mutex si no hay nadie.
+  liberarTodos(): despierta en cadena a todos
+  los hilos al terminar.
+end note
+
+class Mutex {
+  - semaforo : Semaphore
+  + Mutex()
+  + adquirir(): void
+  + liberar(): void
+}
+
+note bottom of Mutex
+  Semaphore(1): trae implícita la cola de ingreso
+  y permite pasar el mutex al hilo despertado
+  (reemplaza a ReentrantLock).
+end note
+
+class Colas {
+  - colas : Semaphore[]
+  - esperando : int[]
+  + Colas(cantidadTransiciones: int)
+  + esperar(t: int): void
+  + despertar(t: int): void
+  + hayEsperando(): boolean[]
+  + despertarTodos(): void
+}
+
+note bottom of Colas
+  Una cola por transición, con un contador
+  de hilos esperando en cada una
+  (reemplaza a Condition[]).
+end note
 
 interface Politica {
-  + {abstract} selectNextTransition(availableTransitions: boolean[]): int
+  + {abstract} permitidas(sensibilizadas: boolean[]): boolean[]
+  + {abstract} elegir(candidatas: boolean[]): int
 }
+
+note right of Politica
+  permitidas(): se consulta al entrar al monitor
+  y después de cada disparo.
+  elegir(): decide a qué hilo despertar.
+end note
 
 class RandomPolicy implements Politica {
-  - random: Random
-  + selectNextTransition(availableTransitions: boolean[]): int
+  - random : Random
+  + RandomPolicy()
+  + permitidas(sensibilizadas: boolean[]): boolean[]
+  + elegir(candidatas: boolean[]): int
 }
+
+note bottom of RandomPolicy
+  permitidas() devuelve las sensibilizadas
+  sin cambios; elegir() sortea.
+end note
 
 class PriorityPolicy implements Politica {
-  + selectNextTransition(availableTransitions: boolean[]): int
+  - priorityOrder : int[]
+  - probPrioridad : double
+  - random : Random
+  + PriorityPolicy(priorityOrder: int[], probPrioridad: double)
+  + permitidas(sensibilizadas: boolean[]): boolean[]
+  + elegir(candidatas: boolean[]): int
 }
+
+note bottom of PriorityPolicy
+  probPrioridad = 1.0 para la política estricta.
+end note
 
 abstract class Worker implements Runnable {
-  # monitor: MonitorInterface
-  # transitionsSequence: int[]
-  # isRunning: boolean
-  + Worker(monitor: MonitorInterface, transitionsSequence: int[])
+  # monitor : MonitorInterface
+  # transitionsSequence : int[]
+  # alphaTimes : long[]
+  + Worker(monitor: MonitorInterface, transitionsSequence: int[], alphaTimes: long[])
   + run(): void
-  + stopWorker(): void
 }
 
+note right of Worker
+  run(): antes de disparar una transición temporal,
+  duerme su α fuera del monitor.
+  Termina cuando fireTransition() devuelve false.
+end note
+
 class AdmisionWorker extends Worker {
-  + AdmisionWorker(monitor: MonitorInterface)
+  + AdmisionWorker(monitor: MonitorInterface, alphaTimes: long[])
 }
 
 class TarjetaWorker extends Worker {
-  + TarjetaWorker(monitor: MonitorInterface)
+  + TarjetaWorker(monitor: MonitorInterface, alphaTimes: long[])
 }
 
 class AltoRiesgoWorker extends Worker {
-  + AltoRiesgoWorker(monitor: MonitorInterface)
+  + AltoRiesgoWorker(monitor: MonitorInterface, alphaTimes: long[])
 }
 
 class TransferenciaWorker extends Worker {
-  + TransferenciaWorker(monitor: MonitorInterface)
+  + TransferenciaWorker(monitor: MonitorInterface, alphaTimes: long[])
 }
 
 class SalidaWorker extends Worker {
-  + SalidaWorker(monitor: MonitorInterface)
+  + SalidaWorker(monitor: MonitorInterface, alphaTimes: long[])
 }
 
+note "Hilos por flujo:\nAdmisión 3, Tarjeta 1, AltoRiesgo 1,\nTransferencia 1, Salida 3.\nA confirmar con el artículo de la referencia *1." as NotaHilos
+NotaHilos .. AdmisionWorker
+NotaHilos .. SalidaWorker
+
 class Logger {
-  - logFilePath: String
-  - invCount: int
+  - logFilePath : String
+  - writer : BufferedWriter
   + Logger(logFilePath: String)
-  + synchronized logTransition(t: int): void
-  + getInvariantsCompletedCount(): int
+  + logTransition(t: int): void
+  + close(): void
 }
+
+note bottom of Logger
+  No es synchronized: el monitor lo llama
+  con el mutex tomado.
+  writer queda abierto durante toda la ejecución
+  (abrir/cerrar en cada disparo alteraría los
+  tiempos medidos); close() lo cierra al final.
+  Conviene que el nombre del archivo incluya
+  la política y la fecha.
+end note
 
 class InvariantChecker {
   + {static} verifyTransitionInvariants(logFilePath: String): boolean
+  + {static} countByInvariant(logFilePath: String): int[]
 }
 
 ' Relaciones principales
-Monitor --> RedPetri : interactúa con >
-Monitor --> Politica : consulta >
-Monitor o-- Logger : notifica >
-Worker --> MonitorInterface : invoca fireTransition() >
-Main ..> Monitor : instancia
+Monitor "1" --> "1" RedPetri : interactúa con >
+Monitor "1" o-- "1" Politica : consulta >
+Monitor "1" o-- "1" Logger : notifica >
+Monitor "1" *-- "1" Mutex
+Monitor "1" *-- "1" Colas
+Worker "1..*" --> "1" MonitorInterface : invoca fireTransition() >
+RedPetri ..> ConfigPagos : lee la configuración
+InvariantChecker ..> Logger : lee su archivo
+
+Main ..> ConfigPagos : instancia
 Main ..> RedPetri : instancia
-Main ..> Worker : gestiona hilos
+Main ..> Monitor : instancia
+Main ..> Politica : elige implementación
+Main ..> Logger : instancia y cierra
+Main ..> Worker : crea hilos y hace join
 Main ..> InvariantChecker : invoca post-ejecución
 
 @enduml
