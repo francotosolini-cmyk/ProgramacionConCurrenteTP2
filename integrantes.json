@@ -1,0 +1,26 @@
+{
+  "grupo": "Programacion Con Currente",
+  "repositorio": "https://github.com/francotosolini-cmyk/ProgramacionConCurrenteTP2.git",
+  "integrantes": [
+    {
+      "nombre": "Tosolini Franco Alberto",
+      "documento": "45702152",
+      "usuarioGit": "francotosolini-cmyk"
+    },
+    {
+      "nombre": "Chiavazza Labeguerie Fiamma Itziar",
+      "documento": "46851396",
+      "usuarioGit": "FiammaCL"
+    },
+    {
+      "nombre": "Scagliotti Marcos",
+      "documento": "46070301",
+      "usuarioGit": "Marco22S6"
+    },
+    {
+      "nombre": "Arias Valentin",
+      "documento": "45734482",
+      "usuarioGit": "ValentinArias11"
+    }
+  ]
+}
