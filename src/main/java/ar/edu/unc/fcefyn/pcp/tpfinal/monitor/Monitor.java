@@ -34,7 +34,12 @@ public class Monitor implements MonitorInterface {
                 return false;
             }
 
-            if (redPetri.isSensitised(t)) {
+            // Se consulta la política también al entrar (no solo al despertar), para que
+            // un hilo que llega con su transición sensibilizada no se saltee la prioridad.
+            // Contrato: permitidas() devuelve un subconjunto de las sensibilizadas y nunca
+            // todo en false si hay alguna sensibilizada.
+            boolean[] permitidas = politica.permitidas(redPetri.getSensitisedTransitions());
+            if (permitidas[t]) {
                 redPetri.fire(t);
                 logger.logTransition(t);
                 if (redPetri.isFinished()) {
