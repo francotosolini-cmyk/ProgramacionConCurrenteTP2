@@ -4,6 +4,7 @@ import ar.edu.unc.fcefyn.pcp.tpfinal.hilos.*;
 import ar.edu.unc.fcefyn.pcp.tpfinal.monitor.Monitor;
 import ar.edu.unc.fcefyn.pcp.tpfinal.monitor.MonitorInterface;
 import ar.edu.unc.fcefyn.pcp.tpfinal.politica.Politica;
+import ar.edu.unc.fcefyn.pcp.tpfinal.politica.PriorityPolicy;
 import ar.edu.unc.fcefyn.pcp.tpfinal.politica.RandomPolicy;
 import ar.edu.unc.fcefyn.pcp.tpfinal.red.ConfigPagos;
 import ar.edu.unc.fcefyn.pcp.tpfinal.red.RedPetri;
@@ -15,18 +16,25 @@ import java.util.List;
 
 public class Main {
     public static void main(String[] args) throws InterruptedException {
+        ConfigPagos config = new ConfigPagos();
+        // El logger se crea antes del handler para poder cerrarlo si un hilo muere
+        Logger logger = new Logger(config.getLogFilePath());
+
         // Si un hilo muere por excepción el programa se detiene y no se queda colgado
         Thread.setDefaultUncaughtExceptionHandler((hilo, error) -> {
             System.err.println("Error fatal en el hilo " + hilo.getName() + ": " + error);
             error.printStackTrace();
+            try {
+                logger.close(); // vuelca el buffer: conserva la traza hasta el error
+            } catch (RuntimeException e) {
+                System.err.println("No se pudo cerrar el log: " + e.getMessage());
+            }
             System.exit(1);
         });
 
-        ConfigPagos config = new ConfigPagos();
         RedPetri redPetri = new RedPetri(config);
-        Politica politica = new RandomPolicy();
+        Politica politica = crearPolitica(args);
 
-        Logger logger = new Logger(config.getLogFilePath());
         MonitorInterface monitor = new Monitor(redPetri, politica, logger);
 
         // null p/ correr sin tiempos. Después cambiar null por config.getAlphaTimes()
@@ -63,13 +71,42 @@ public class Main {
 
         // cerrar logger (vuelca el buffer) y validar invariantes sobre el log
         logger.close();
-        boolean ok = InvariantChecker.verifyTransitionInvariants(config.getLogFilePath());
-        int[] porInvariante = InvariantChecker.countByInvariant(config.getLogFilePath());
+        InvariantChecker.ResultadoConteo resultado = InvariantChecker.procesarLog(config.getLogFilePath());
 
         System.out.println("Red finalizada (T9 == 200): " + redPetri.isFinished());
-        System.out.println("Invariantes de transición válidos: " + ok);
-        System.out.println("Tarjeta=" + porInvariante[0] + ", AltoRiesgo=" + porInvariante[1]
-                + ", Transferencia=" + porInvariante[2]);
+        System.out.println("Invariantes de transición válidos: " + resultado.valido);
+        System.out.println("Tarjeta=" + resultado.tarjeta + ", AltoRiesgo=" + resultado.altoRiesgo
+                + ", Transferencia=" + resultado.transferencia);
         System.out.println("Todos los " + hilos.size() + " hilos terminaron en " + duracionMs + " ms.");
+
+        // Código de salida 2 si el log no se redujo por completo a invariantes válidos
+        if (!resultado.valido) {
+            System.err.println("Invariantes de transición inválidos. Resto sin reducir: " + resultado.resto);
+            System.exit(2);
+        }
+    }
+
+    private static Politica crearPolitica(String[] args) {
+        String nombre = args.length > 0 ? args[0].toLowerCase() : "random";
+        switch (nombre) {
+            case "random":
+                return new RandomPolicy();
+            case "priority":
+                double prob = 0.8; // ver si hace falta cambiar
+                if (args.length > 1) {
+                    try {
+                        prob = Double.parseDouble(args[1]);
+                    } catch (NumberFormatException e) {
+                        System.err.println("Probabilidad inválida: " + args[1]);
+                        System.exit(64);
+                    }
+                }
+                return new PriorityPolicy(prob);
+            default:
+                System.err.println("Política desconocida: " + args[0]
+                        + ". Uso: <random|priority [probabilidad]>");
+                System.exit(64);
+                return null; // inalcanzable
+        }
     }
 }
