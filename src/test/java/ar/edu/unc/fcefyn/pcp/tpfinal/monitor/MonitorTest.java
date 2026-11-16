@@ -26,18 +26,18 @@ class MonitorTest {
     /** Política sin restricciones: permite todo lo sensibilizado y elige la primera candidata. */
     static class PoliticaPrimera implements Politica {
         public boolean[] permitidas(boolean[] s) { return s.clone(); }
-        public int elejir(boolean[] c) {
+        public int elegir(boolean[] c) {
             for (int i = 0; i < c.length; i++) if (c[i]) return i;
-            throw new IllegalStateException("elejir() sin candidatas");
+            throw new IllegalStateException("elegir() sin candidatas");
         }
     }
 
     /** Política que elige una candidata al azar. */
     static class PoliticaAleatoria extends PoliticaPrimera {
-        @Override public int elejir(boolean[] c) {
+        @Override public int elegir(boolean[] c) {
             List<Integer> idx = new ArrayList<>();
             for (int i = 0; i < c.length; i++) if (c[i]) idx.add(i);
-            if (idx.isEmpty()) throw new IllegalStateException("elejir() sin candidatas");
+            if (idx.isEmpty()) throw new IllegalStateException("elegir() sin candidatas");
             return idx.get(ThreadLocalRandom.current().nextInt(idx.size()));
         }
     }
