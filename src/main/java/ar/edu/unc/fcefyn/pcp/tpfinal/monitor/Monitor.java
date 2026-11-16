@@ -85,7 +85,7 @@ public class Monitor implements MonitorInterface {
         boolean[] candidatas = getAwaitingSensitisedTransitions();
         for (boolean c : candidatas) {
             if (c) {
-                int elegida = politica.elejir(candidatas);
+                int elegida = politica.elegir(candidatas);
                 esperando[elegida]--;
                 colas.despertar(elegida); // el mutex pasa al despertado (paso de testigo)
                 return;
