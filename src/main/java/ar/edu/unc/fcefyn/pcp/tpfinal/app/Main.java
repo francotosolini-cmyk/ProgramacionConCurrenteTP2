@@ -7,6 +7,7 @@ import ar.edu.unc.fcefyn.pcp.tpfinal.politica.Politica;
 import ar.edu.unc.fcefyn.pcp.tpfinal.politica.RandomPolicy;
 import ar.edu.unc.fcefyn.pcp.tpfinal.red.ConfigPagos;
 import ar.edu.unc.fcefyn.pcp.tpfinal.red.RedPetri;
+import ar.edu.unc.fcefyn.pcp.tpfinal.registro.InvariantChecker;
 import ar.edu.unc.fcefyn.pcp.tpfinal.registro.Logger;
 
 import java.util.ArrayList;
@@ -25,9 +26,8 @@ public class Main {
         RedPetri redPetri = new RedPetri(config);
         Politica politica = new RandomPolicy();
 
-        // IMPORTANTE: descomentar Logger cuando esté implementado
-        // Logger logger = new Logger(config.getLogFilePath());
-        MonitorInterface monitor = new Monitor(redPetri, politica, new Logger());
+        Logger logger = new Logger(config.getLogFilePath());
+        MonitorInterface monitor = new Monitor(redPetri, politica, logger);
 
         // null p/ correr sin tiempos. Después cambiar null por config.getAlphaTimes()
         long[] alphaTimes = null;
@@ -61,11 +61,15 @@ public class Main {
 
         long duracionMs = System.currentTimeMillis() - inicio;
 
-        // cerrar logger y validar invariantes
-        // logger.close();
-        // boolean ok = InvariantChecker.verifyTransitionInvariants(config.getLogFilePath());
+        // cerrar logger (vuelca el buffer) y validar invariantes sobre el log
+        logger.close();
+        boolean ok = InvariantChecker.verifyTransitionInvariants(config.getLogFilePath());
+        int[] porInvariante = InvariantChecker.countByInvariant(config.getLogFilePath());
 
         System.out.println("Red finalizada (T9 == 200): " + redPetri.isFinished());
+        System.out.println("Invariantes de transición válidos: " + ok);
+        System.out.println("Tarjeta=" + porInvariante[0] + ", AltoRiesgo=" + porInvariante[1]
+                + ", Transferencia=" + porInvariante[2]);
         System.out.println("Todos los " + hilos.size() + " hilos terminaron en " + duracionMs + " ms.");
     }
 }
