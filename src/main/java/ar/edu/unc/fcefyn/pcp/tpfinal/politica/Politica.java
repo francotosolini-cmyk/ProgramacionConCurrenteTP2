@@ -1,8 +1,7 @@
 package ar.edu.unc.fcefyn.pcp.tpfinal.politica;
 
 public interface Politica {
+    boolean[] permitidas(boolean[] sensibilizadas);
 
-    public boolean[] permitidas(boolean[] sensibilizadas);
-
-    public int elejir(boolean[] candidatas);
+    int elegir(boolean[] candidatas);
 }
