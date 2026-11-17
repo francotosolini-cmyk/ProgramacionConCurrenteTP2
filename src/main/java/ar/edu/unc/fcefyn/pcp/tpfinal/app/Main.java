@@ -63,13 +63,21 @@ public class Main {
 
         // cerrar logger (vuelca el buffer) y validar invariantes sobre el log
         logger.close();
-        boolean ok = InvariantChecker.verifyTransitionInvariants(config.getLogFilePath());
-        int[] porInvariante = InvariantChecker.countByInvariant(config.getLogFilePath());
+        // Un solo procesamiento del log: validez (exigiendo el total objetivo) + conteos
+        InvariantChecker.ResultadoConteo res =
+                InvariantChecker.procesarLog(config.getLogFilePath(), config.getTargetInvariants());
 
-        System.out.println("Red finalizada (T9 == 200): " + redPetri.isFinished());
-        System.out.println("Invariantes de transición válidos: " + ok);
-        System.out.println("Tarjeta=" + porInvariante[0] + ", AltoRiesgo=" + porInvariante[1]
-                + ", Transferencia=" + porInvariante[2]);
+        System.out.println("Red finalizada (T9 == " + config.getTargetInvariants() + "): " + redPetri.isFinished());
+        System.out.println("Invariantes de transición válidos: " + res.valido);
+        if (!res.valido) {
+            System.out.println("  Total completado: " + res.getTotalInvariantes()
+                    + " (esperado " + config.getTargetInvariants() + ")");
+            System.out.println("  Transiciones sin reducir: '" + res.resto + "'");
+        }
+        System.out.println("Distribución por invariante (total " + res.getTotalInvariantes() + "):");
+        System.out.printf("  Tarjeta       = %3d (%6.2f%%)%n", res.tarjeta, res.getPorcentajeTarjeta());
+        System.out.printf("  Alto Riesgo   = %3d (%6.2f%%)%n", res.altoRiesgo, res.getPorcentajeAltoRiesgo());
+        System.out.printf("  Transferencia = %3d (%6.2f%%)%n", res.transferencia, res.getPorcentajeTransferencia());
         System.out.println("Todos los " + hilos.size() + " hilos terminaron en " + duracionMs + " ms.");
     }
 }

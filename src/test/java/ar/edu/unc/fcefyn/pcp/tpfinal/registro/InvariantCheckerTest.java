@@ -125,4 +125,37 @@ class InvariantCheckerTest {
         assertEquals(50, conteos[2], "Transferencia");
         assertEquals(200, conteos[0] + conteos[1] + conteos[2]);
     }
+
+    @Test
+    @DisplayName("Debe fallar si el total de invariantes no coincide con el esperado")
+    void testTotalEsperadoNoCoincide() {
+        String seq = "T0 T1 T2 T3 T9 T0 T4 T5 T9";
+        assertTrue(InvariantChecker.reducirSecuencia(seq, 2).valido);
+
+        InvariantChecker.ResultadoConteo res = InvariantChecker.reducirSecuencia(seq, 200);
+        assertFalse(res.valido, "Traza completa pero con menos invariantes que los esperados");
+        assertEquals("", res.resto);
+        assertEquals(2, res.getTotalInvariantes());
+    }
+
+    @Test
+    @DisplayName("Debe calcular el porcentaje de cada invariante sobre el total")
+    void testPorcentajes() {
+        String seq = "T0 T1 T2 T3 T9 T0 T1 T2 T3 T9 T0 T4 T5 T9 T0 T6 T7 T8 T9";
+        InvariantChecker.ResultadoConteo res = InvariantChecker.reducirSecuencia(seq, 4);
+
+        assertTrue(res.valido);
+        assertEquals(50.0, res.getPorcentajeTarjeta(), 1e-9);
+        assertEquals(25.0, res.getPorcentajeAltoRiesgo(), 1e-9);
+        assertEquals(25.0, res.getPorcentajeTransferencia(), 1e-9);
+    }
+
+    @Test
+    @DisplayName("Los porcentajes deben ser 0 si no hay invariantes completados")
+    void testPorcentajesSinInvariantes() {
+        InvariantChecker.ResultadoConteo res = InvariantChecker.reducirSecuencia("T0 T1");
+        assertEquals(0.0, res.getPorcentajeTarjeta());
+        assertEquals(0.0, res.getPorcentajeAltoRiesgo());
+        assertEquals(0.0, res.getPorcentajeTransferencia());
+    }
 }
