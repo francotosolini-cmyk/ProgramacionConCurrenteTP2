@@ -13,9 +13,24 @@ import ar.edu.unc.fcefyn.pcp.tpfinal.registro.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class Main {
+
+    private static final double PROB_PRIORIDAD_DEFECTO = 0.8; // ver si hay que cambiar
+
     public static void main(String[] args) throws InterruptedException {
+        // Los args se validan antes de crear el Logger
+        Politica politica;
+        try {
+            politica = crearPolitica(args);
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            System.err.println("Uso: Main [random | priority [probabilidad entre 0 y 1]]");
+            System.exit(64);
+            return;
+        }
+
         ConfigPagos config = new ConfigPagos();
         // El logger se crea antes del handler para poder cerrarlo si un hilo muere
         Logger logger = new Logger(config.getLogFilePath());
@@ -33,7 +48,6 @@ public class Main {
         });
 
         RedPetri redPetri = new RedPetri(config);
-        Politica politica = crearPolitica(args);
 
         MonitorInterface monitor = new Monitor(redPetri, politica, logger);
 
@@ -71,42 +85,56 @@ public class Main {
 
         // cerrar logger (vuelca el buffer) y validar invariantes sobre el log
         logger.close();
-        InvariantChecker.ResultadoConteo resultado = InvariantChecker.procesarLog(config.getLogFilePath());
+        // Un solo procesamiento del log: validez (exigiendo el total objetivo) + conteos
+        InvariantChecker.ResultadoConteo res =
+                InvariantChecker.procesarLog(config.getLogFilePath(), config.getTargetInvariants());
 
-        System.out.println("Red finalizada (T9 == 200): " + redPetri.isFinished());
-        System.out.println("Invariantes de transición válidos: " + resultado.valido);
-        System.out.println("Tarjeta=" + resultado.tarjeta + ", AltoRiesgo=" + resultado.altoRiesgo
-                + ", Transferencia=" + resultado.transferencia);
+        System.out.println("Red finalizada (T9 == " + config.getTargetInvariants() + "): " + redPetri.isFinished());
+        System.out.println("Invariantes de transición válidos: " + res.valido);
+        if (!res.valido) {
+            System.out.println("  Total completado: " + res.getTotalInvariantes()
+                    + " (esperado " + config.getTargetInvariants() + ")");
+            System.out.println("  Transiciones sin reducir: '" + res.resto + "'");
+        }
+        System.out.println("Distribución por invariante (total " + res.getTotalInvariantes() + "):");
+        System.out.printf("  Tarjeta       = %3d (%6.2f%%)%n", res.tarjeta, res.getPorcentajeTarjeta());
+        System.out.printf("  Alto Riesgo   = %3d (%6.2f%%)%n", res.altoRiesgo, res.getPorcentajeAltoRiesgo());
+        System.out.printf("  Transferencia = %3d (%6.2f%%)%n", res.transferencia, res.getPorcentajeTransferencia());
         System.out.println("Todos los " + hilos.size() + " hilos terminaron en " + duracionMs + " ms.");
 
-        // Código de salida 2 si el log no se redujo por completo a invariantes válidos
-        if (!resultado.valido) {
-            System.err.println("Invariantes de transición inválidos. Resto sin reducir: " + resultado.resto);
+        // Código de salida 2 si el log no es válido (no se redujo por completo o el total no coincide)
+        if (!res.valido) {
             System.exit(2);
         }
     }
 
+    /**
+     * Crea la política según los argumentos: {@code random} (por defecto) o
+     * {@code priority [probabilidad]}.
+     *
+     * @throws IllegalArgumentException si la política es desconocida, sobran parámetros o la
+     *                                  probabilidad no es un número entre 0 y 1.
+     */
     private static Politica crearPolitica(String[] args) {
-        String nombre = args.length > 0 ? args[0].toLowerCase() : "random";
+        String nombre = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "random";
         switch (nombre) {
             case "random":
+                if (args.length > 1) {
+                    throw new IllegalArgumentException("La política random no recibe parámetros");
+                }
                 return new RandomPolicy();
             case "priority":
-                double prob = 0.8; // ver si hace falta cambiar
+                double prob = PROB_PRIORIDAD_DEFECTO;
                 if (args.length > 1) {
                     try {
                         prob = Double.parseDouble(args[1]);
                     } catch (NumberFormatException e) {
-                        System.err.println("Probabilidad inválida: " + args[1]);
-                        System.exit(64);
+                        throw new IllegalArgumentException("Probabilidad inválida: " + args[1]);
                     }
                 }
-                return new PriorityPolicy(prob);
+                return new PriorityPolicy(prob); // lanza IllegalArgumentException si está fuera de [0,1]
             default:
-                System.err.println("Política desconocida: " + args[0]
-                        + ". Uso: <random|priority [probabilidad]>");
-                System.exit(64);
-                return null; // inalcanzable
+                throw new IllegalArgumentException("Política desconocida: " + args[0]);
         }
     }
 }
