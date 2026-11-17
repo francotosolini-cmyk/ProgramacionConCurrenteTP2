@@ -66,6 +66,18 @@ public class InvariantChecker {
     }
 
     /**
+     * Procesa el log y además exige que la cantidad total de invariantes completados
+     * sea exactamente la esperada (ej. 200, Req. 8).
+     *
+     * @param logFilePath Ruta al archivo de log.
+     * @param totalEsperado Cantidad de invariantes que debe haber completado la simulación.
+     */
+    public static ResultadoConteo procesarLog(String logFilePath, int totalEsperado) {
+        String secuencia = leerSecuenciaTransiciones(logFilePath);
+        return reducirSecuencia(secuencia, totalEsperado);
+    }
+
+    /**
      * Lee las transiciones registradas en el archivo de log y construye una cadena de tokens separados por espacio.
      */
     public static String leerSecuenciaTransiciones(String logFilePath) {
@@ -96,6 +108,18 @@ public class InvariantChecker {
      * @return ResultadoConteo con el detalle de reducción y conteos.
      */
     public static ResultadoConteo reducirSecuencia(String secuencia) {
+        return reducirSecuencia(secuencia, -1);
+    }
+
+    /**
+     * Igual que {@link #reducirSecuencia(String)}, pero si {@code totalEsperado >= 0}
+     * la traza solo es válida cuando el total de invariantes completados coincide exactamente
+     * con ese valor.
+     *
+     * @param secuencia Cadena de transiciones.
+     * @param totalEsperado Total de invariantes exigido, o un valor negativo para no exigirlo.
+     */
+    public static ResultadoConteo reducirSecuencia(String secuencia, int totalEsperado) {
         String s = secuencia;
         int countTarjeta = 0;
         int countAltoRiesgo = 0;
@@ -132,7 +156,8 @@ public class InvariantChecker {
 
         String resto = s.trim();
         int totalInvariantes = countTarjeta + countAltoRiesgo + countTransferencia;
-        boolean valido = resto.isEmpty() && totalInvariantes > 0;
+        boolean valido = resto.isEmpty() && totalInvariantes > 0
+                && (totalEsperado < 0 || totalInvariantes == totalEsperado);
 
         return new ResultadoConteo(valido, countTarjeta, countAltoRiesgo, countTransferencia, resto);
     }
@@ -159,11 +184,34 @@ public class InvariantChecker {
             return tarjeta + altoRiesgo + transferencia;
         }
 
+        /**
+         * Porcentaje que representa una cantidad sobre el total de invariantes completados.
+         * Devuelve 0 si no se completó ninguno.
+         */
+        private double porcentaje(int cantidad) {
+            int total = getTotalInvariantes();
+            return total == 0 ? 0.0 : cantidad * 100.0 / total;
+        }
+
+        public double getPorcentajeTarjeta() {
+            return porcentaje(tarjeta);
+        }
+
+        public double getPorcentajeAltoRiesgo() {
+            return porcentaje(altoRiesgo);
+        }
+
+        public double getPorcentajeTransferencia() {
+            return porcentaje(transferencia);
+        }
+
         @Override
         public String toString() {
             return String.format(
-                "ResultadoConteo[valido=%b, tarjeta=%d, altoRiesgo=%d, transferencia=%d, total=%d, resto='%s']",
-                valido, tarjeta, altoRiesgo, transferencia, getTotalInvariantes(), resto
+                "ResultadoConteo[valido=%b, tarjeta=%d (%.2f%%), altoRiesgo=%d (%.2f%%), "
+                    + "transferencia=%d (%.2f%%), total=%d, resto='%s']",
+                valido, tarjeta, getPorcentajeTarjeta(), altoRiesgo, getPorcentajeAltoRiesgo(),
+                transferencia, getPorcentajeTransferencia(), getTotalInvariantes(), resto
             );
         }
     }
