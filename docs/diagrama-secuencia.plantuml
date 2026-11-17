@@ -1,0 +1,84 @@
+@startuml Diagrama de Secuencia - Disparo de Transición
+
+title Diagrama de Secuencia - Protocolo de Disparo con Paso de Testigo (Monitor)
+
+autonumber
+actor "Worker (Hilo)" as W
+participant "Monitor" as M
+participant "Mutex" as X
+participant "RedPetri" as R
+participant "Logger" as L
+participant "Politica" as P
+participant "Colas" as C
+
+== 1. Preparación fuera del Monitor ==
+opt Transición temporal (tiempo alfa > 0)
+    W -> W : sleep(alpha)\n(espera fuera del monitor)
+end
+
+== 2. Intento de Disparo en el Monitor ==
+W -> M : fireTransition(t)
+activate M
+
+M -> X : adquirir()
+activate X
+X --> M
+deactivate X
+
+alt Caso A: Transición t sensibilizada (Disparo exitoso)
+    M -> R : isSensitised(t)
+    R --> M : true
+    
+    M -> R : fire(t)
+    note right of R: Actualiza el marcado M\ny verifica invariantes de plaza (Req. 12)
+    R --> M
+    
+    M -> L : logTransition(t)
+    note right of L: Escribe "T<t> timestamp" en el log
+    
+    group signalNext() [Paso de Testigo o Liberación]
+        M -> R : getSensitisedTransitions()
+        R --> M : sensibilizadas[]
+        M -> P : permitidas(sensibilizadas[])
+        P --> M : permitidas[]
+        
+        alt Hay hilos esperando en transiciones habilitadas
+            M -> P : elegir(candidatas[])
+            P --> M : transición elegida
+            M -> C : despertar(elegida)
+            note over M, C: El mutex NO se libera a nivel global:\nse transfiere directo al hilo despertado (Paso de Testigo)
+        else No hay candidatos para despertar
+            M -> X : liberar()
+        end
+    end
+    
+    M --> W : true (disparo completado)
+
+else Caso B: Transición t NO sensibilizada (Espera en cola)
+    M -> R : isSensitised(t)
+    R --> M : false
+    
+    note over M: Se anota en esperando[t]++
+    
+    group signalNext() [Cede el mutex antes de suspenderse]
+        alt Hay otro hilo esperando y habilitado
+            M -> C : despertar(elegida)
+        else Nadie puede avanzar
+            M -> X : liberar()
+        end
+    end
+    
+    M -> C : esperar(t)
+    activate C
+    note over W, C: El hilo queda bloqueado en el semáforo\nhasta que otro disparo lo despierte
+    
+    ... Tiempo después: otro hilo dispara y ejecuta signalNext() ...
+    
+    C --> M : liberado (adquiere el testigo)
+    deactivate C
+    note over M: El hilo despierta con el mutex en mano\ny reintenta el bucle para disparar t
+end
+
+deactivate M
+
+@enduml
