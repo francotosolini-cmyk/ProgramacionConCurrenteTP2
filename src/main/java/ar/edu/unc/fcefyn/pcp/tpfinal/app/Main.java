@@ -15,6 +15,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
 public class Main {
 
     private static final double PROB_PRIORIDAD_DEFECTO = 0.8; // ver si hay que cambiar
@@ -30,8 +33,22 @@ public class Main {
             System.exit(64);
             return;
         }
+        String etiqueta = "random";
+        if (politica instanceof PriorityPolicy) { // Si es PriorityPolicy, se agrega la probabilidad a la etiqueta
+            double probabilidad;
+            if (args.length > 1) { // Si se pasó un segundo argumento, se usa como probabilidad
+                probabilidad = Double.parseDouble(args[1]);
+            } else {
+                probabilidad = PROB_PRIORIDAD_DEFECTO;
+            }
 
-        ConfigPagos config = new ConfigPagos();
+            etiqueta = "priority-" + probabilidad;
+        }
+
+        String fecha = LocalDateTime.now() //Obtiene la fecha y hora actual y la formatea como "yyyy-MM-dd_HH-mm-ss-SSS"
+            .format(DateTimeFormatter.ofPattern("uuuu-MM-dd_HH-mm-ss-SSS"));
+        String rutaLog = "resultados/logs/ejecucion_" + etiqueta + "_" + fecha + ".log"; //Une la carpeta, la etiqueta, la fecha y la extension
+        ConfigPagos config = new ConfigPagos(rutaLog);
         // El logger se crea antes del handler para poder cerrarlo si un hilo muere
         Logger logger = new Logger(config.getLogFilePath());
 
@@ -52,7 +69,7 @@ public class Main {
         MonitorInterface monitor = new Monitor(redPetri, politica, logger);
 
         // null p/ correr sin tiempos. Después cambiar null por config.getAlphaTimes()
-        long[] alphaTimes = null;
+        long[] alphaTimes = config.getAlphaTimes();
 
         List<Thread> hilos = new ArrayList<>();
 

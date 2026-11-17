@@ -52,17 +52,21 @@ public class ConfigPagos {
      * entre 20 y 40 segundos según el requerimiento 10.
      */
     public ConfigPagos() {
-        this("resultados/logs/ejecucion.log", new long[] {
-            0,    // T0: inmediata
-            0,    // T1: inmediata
-            50,   // T2: temporal (autorización)
-            50,   // T3: temporal (captura)
-            0,    // T4: inmediata
-            120,  // T5: temporal (scoring alto riesgo)
-            0,    // T6: inmediata
-            50,   // T7: temporal (validación cuenta)
-            50,   // T8: temporal (ejecución bancaria)
-            0     // T9: inmediata
+        this("resultados/logs/ejecucion.log");
+    }
+
+    public ConfigPagos(String logFilePath) {
+        this(logFilePath, new long[] {
+            0,    // T0
+            0,    // T1
+            100,      // T2
+            100,   // T3
+            0,    // T4
+            120,  // T5
+            0,    // T6
+            100,   // T7
+            100,   // T8
+            0     // T9
         });
     }
 
