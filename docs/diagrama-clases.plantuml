@@ -1,10 +1,29 @@
 @startuml Diagrama de Clases - TP Final PCyP 2026
 
+skinparam dpi 90
+
 class Main {
+  - {static} PROB_PRIORIDAD_DEFECTO : double = 0.8
   + {static} main(args: String[]): void
+  - {static} crearPolitica(args: String[]): Politica
 }
 
+note right of Main
+  args: random | priority [probabilidad].
+  Los args se validan ANTES de crear el Logger
+  (argumentos inválidos: exit 64, sin tocar logs).
+  Arma el nombre del log con política, probabilidad
+  y fecha. Crea 9 hilos (3+1+1+1+3), hace join,
+  cierra el logger y valida el log.
+  Exit 2 si el log no es válido; exit 1 si un
+  hilo muere (UncaughtExceptionHandler).
+end note
+
 class ConfigPagos {
+  + {static} PLAZAS_COUNT : int = 10
+  + {static} TRANSICIONES_COUNT : int = 10
+  + {static} P0..P9 : int
+  + {static} T0..T9 : int
   - iMinus : int[][]
   - iPlus : int[][]
   - marcadoInicial : int[]
@@ -15,6 +34,9 @@ class ConfigPagos {
   - exitTransition : int
   - targetInvariants : int = 200
   - logFilePath : String
+  + ConfigPagos()
+  + ConfigPagos(logFilePath: String)
+  + ConfigPagos(logFilePath: String, alphaTimes: long[])
   + getIMinus(): int[][]
   + getIPlus(): int[][]
   + getMarcadoInicial(): int[]
@@ -27,9 +49,18 @@ class ConfigPagos {
   + getLogFilePath(): String
 }
 
+note bottom of ConfigPagos
+  Única clase que conoce la topología concreta
+  de la red (matrices, marcado inicial, tiempos α,
+  invariantes de plaza).
+  α: T2=T3=T7=T8=100 ms, T5=120 ms; el resto 0.
+end note
+
 class RedPetri {
+  - plazasCount : int
+  - transicionesCount : int
   - I : int[][]
-  - IMinus : int[][]
+  - iMinus : int[][]
   - marcado : int[]
   - fireCount : int[]
   - placeInvariants : int[][]
@@ -40,10 +71,13 @@ class RedPetri {
   + RedPetri(config: ConfigPagos)
   + isSensitised(t: int): boolean
   + getSensitisedTransitions(): boolean[]
-  + fire(t: int): void
+  + fire(t: int): boolean
   + isFinished(): boolean
   + getTransicionesCount(): int
+  + getPlazasCount(): int
   + getMarcadoActual(): int[]
+  + getFireCount(): int[]
+  + getFireCount(t: int): int
   - checkPlaceInvariants(): boolean
 }
 
@@ -51,13 +85,14 @@ note right of RedPetri
   isSensitised(entryTransition) devuelve false
   cuando fireCount[T0] llega a targetInvariants (200):
   así no quedan invariantes incompletos en el log.
-  isFinished(): fireCount[T9] == targetInvariants.
-  fire() llama a checkPlaceInvariants()
-  después de cada disparo (req. 12).
+  isFinished(): fireCount[T9] >= targetInvariants.
+  fire() llama a checkPlaceInvariants() después de
+  cada disparo (req. 12) y lanza IllegalStateException
+  si se viola algún invariante de plaza.
 end note
 
 interface MonitorInterface {
-  + {abstract} fireTransition(transition: int): boolean
+  + {abstract} fireTransition(t: int): boolean
 }
 
 class Monitor implements MonitorInterface {
@@ -66,21 +101,27 @@ class Monitor implements MonitorInterface {
   - mutex : Mutex
   - colas : Colas
   - logger : Logger
+  - esperando : int[]
   + Monitor(redPetri: RedPetri, politica: Politica, logger: Logger)
-  + fireTransition(transition: int): boolean
-  - getWaitingSensitisedTransitions(): boolean[]
+  + fireTransition(t: int): boolean
+  - getAwaitingSensitisedTransitions(): boolean[]
   - signalNext(): void
   - liberarTodos(): void
 }
 
 note right of Monitor
-  fireTransition() es el único método público.
+  fireTransition() es el único método público
+  (además del constructor).
   El monitor es agnóstico a la red: no conoce
   plazas, transiciones ni tiempos concretos.
-  signalNext(): despierta a un hilo y le pasa
-  el mutex, o libera el mutex si no hay nadie.
-  liberarTodos(): despierta en cadena a todos
-  los hilos al terminar.
+  Al entrar consulta politica.permitidas(); si t no
+  está permitida se anota en esperando[t], pasa el
+  testigo (signalNext) y duerme en colas.esperar(t).
+  esperando[] cuenta (con el mutex tomado) a los hilos
+  que van a dormir, para no perder despertares.
+  signalNext(): despierta a un candidato y le pasa
+  el mutex, o libera el mutex si no hay ninguno.
+  liberarTodos(): al terminar la red abre todas las colas.
 end note
 
 class Mutex {
@@ -91,25 +132,27 @@ class Mutex {
 }
 
 note bottom of Mutex
-  Semaphore(1): trae implícita la cola de ingreso
-  y permite pasar el mutex al hilo despertado
-  (reemplaza a ReentrantLock).
+  Semaphore(1, fair = true): cola de ingreso FIFO
+  y permite pasar el mutex al hilo despertado.
 end note
 
 class Colas {
-  - colas : Semaphore[]
-  - esperando : int[]
+  - semaforos : Semaphore[]
   + Colas(cantidadTransiciones: int)
   + esperar(t: int): void
   + despertar(t: int): void
-  + hayEsperando(): boolean[]
+  + hayEsperando(t: int): boolean
+  + hayEsperando(): boolean
+  + hilosEsperando(): boolean[]
   + despertarTodos(): void
 }
 
 note bottom of Colas
-  Una cola por transición, con un contador
-  de hilos esperando en cada una
-  (reemplaza a Condition[]).
+  Una cola (Semaphore(0, fair)) por transición.
+  despertarTodos(): release(MAX_VALUE/2) en cada
+  cola; se invoca una sola vez, al finalizar la red.
+  El Monitor usa su propio contador esperando[]
+  y no hayEsperando()/hilosEsperando().
 end note
 
 interface Politica {
@@ -118,48 +161,53 @@ interface Politica {
 }
 
 note right of Politica
-  permitidas(): se consulta al entrar al monitor
-  y después de cada disparo.
+  permitidas(): subconjunto de las sensibilizadas;
+  nunca todo en false si hay alguna sensibilizada.
+  Se consulta al entrar al monitor y en signalNext().
   elegir(): decide a qué hilo despertar.
 end note
 
 class RandomPolicy implements Politica {
-  - random : Random
-  + RandomPolicy()
   + permitidas(sensibilizadas: boolean[]): boolean[]
   + elegir(candidatas: boolean[]): int
 }
 
 note bottom of RandomPolicy
-  permitidas() devuelve las sensibilizadas
-  sin cambios; elegir() sortea.
+  permitidas() devuelve una copia de las sensibilizadas;
+  elegir() sortea entre las candidatas (ThreadLocalRandom)
+  y devuelve -1 si no hay ninguna.
 end note
 
 class PriorityPolicy implements Politica {
-  - priorityOrder : int[]
+  - politicaAleatoria : RandomPolicy
   - probPrioridad : double
-  - random : Random
-  + PriorityPolicy(priorityOrder: int[], probPrioridad: double)
+  + PriorityPolicy(probPrioridad: double)
   + permitidas(sensibilizadas: boolean[]): boolean[]
   + elegir(candidatas: boolean[]): int
 }
 
 note bottom of PriorityPolicy
-  probPrioridad = 1.0 para la política estricta.
+  Prioriza el flujo de alto riesgo: si T4 está
+  sensibilizada, con probabilidad probPrioridad
+  deshabilita T1 y T6. Lanza IllegalArgumentException
+  si probPrioridad no está en [0, 1].
+  elegir() delega en RandomPolicy.
+  Único lugar (junto con ConfigPagos) que conoce T1, T4, T6.
 end note
 
 abstract class Worker implements Runnable {
-  # monitor : MonitorInterface
-  # transitionsSequence : int[]
-  # alphaTimes : long[]
+  - monitor : MonitorInterface
+  - transitionsSequence : int[]
+  - alphaTimes : long[]
   + Worker(monitor: MonitorInterface, transitionsSequence: int[], alphaTimes: long[])
   + run(): void
 }
 
 note right of Worker
-  run(): antes de disparar una transición temporal,
-  duerme su α fuera del monitor.
-  Termina cuando fireTransition() devuelve false.
+  run(): recorre su secuencia de transiciones; antes de
+  cada una duerme su α fuera del monitor (si alphaTimes
+  no es null y α > 0). Termina cuando fireTransition()
+  devuelve false (la red finalizó) o si lo interrumpen.
 end note
 
 class AdmisionWorker extends Worker {
@@ -182,32 +230,65 @@ class SalidaWorker extends Worker {
   + SalidaWorker(monitor: MonitorInterface, alphaTimes: long[])
 }
 
-note "Hilos por flujo:\nAdmisión 3, Tarjeta 1, AltoRiesgo 1,\nTransferencia 1, Salida 3.\nA confirmar con el artículo de la referencia *1." as NotaHilos
+note "Secuencia de cada Worker e instancias (9 hilos):\nAdmisión {T0}: 3 | Tarjeta {T1,T2,T3}: 1 |\nAltoRiesgo {T4,T5}: 1 | Transferencia {T6,T7,T8}: 1 |\nSalida {T9}: 3" as NotaHilos
 NotaHilos .. AdmisionWorker
+NotaHilos .. TarjetaWorker
+NotaHilos .. AltoRiesgoWorker
+NotaHilos .. TransferenciaWorker
 NotaHilos .. SalidaWorker
 
 class Logger {
   - logFilePath : String
   - writer : BufferedWriter
+  # Logger()
   + Logger(logFilePath: String)
   + logTransition(t: int): void
   + close(): void
+  + getLogFilePath(): String
 }
 
 note bottom of Logger
-  No es synchronized: el monitor lo llama
-  con el mutex tomado.
-  writer queda abierto durante toda la ejecución
-  (abrir/cerrar en cada disparo alteraría los
-  tiempos medidos); close() lo cierra al final.
-  Conviene que el nombre del archivo incluya
-  la política y la fecha.
+  No es synchronized: el monitor lo llama con el mutex
+  tomado. Escribe "T<t> <timestamp>" por línea.
+  writer queda abierto toda la ejecución (abrir/cerrar
+  por disparo alteraría los tiempos); close() lo vacía y
+  cierra al final. El constructor protegido sin argumentos
+  es para dobles de prueba.
 end note
 
 class InvariantChecker {
+  - {static} P_TARJETA : Pattern
+  - {static} P_ALTO_RIESGO : Pattern
+  - {static} P_TRANSFERENCIA : Pattern
   + {static} verifyTransitionInvariants(logFilePath: String): boolean
   + {static} countByInvariant(logFilePath: String): int[]
+  + {static} procesarLog(logFilePath: String): ResultadoConteo
+  + {static} procesarLog(logFilePath: String, totalEsperado: int): ResultadoConteo
+  + {static} leerSecuenciaTransiciones(logFilePath: String): String
+  + {static} reducirSecuencia(secuencia: String): ResultadoConteo
+  + {static} reducirSecuencia(secuencia: String, totalEsperado: int): ResultadoConteo
 }
+
+class "InvariantChecker.ResultadoConteo" as ResultadoConteo {
+  + valido : boolean {readOnly}
+  + tarjeta : int {readOnly}
+  + altoRiesgo : int {readOnly}
+  + transferencia : int {readOnly}
+  + resto : String {readOnly}
+  + getTotalInvariantes(): int
+  + getPorcentajeTarjeta(): double
+  + getPorcentajeAltoRiesgo(): double
+  + getPorcentajeTransferencia(): double
+  + toString(): String
+}
+
+note bottom of InvariantChecker
+  Req. 13: reduce la traza del log con expresiones
+  regulares (un patrón por invariante de transición)
+  hasta que no quede nada. Es válida si queda vacía,
+  hay al menos un invariante y, si se indica, el total
+  coincide con totalEsperado (200).
+end note
 
 ' Relaciones principales
 Monitor "1" --> "1" RedPetri : interactúa con >
@@ -217,7 +298,10 @@ Monitor "1" *-- "1" Mutex
 Monitor "1" *-- "1" Colas
 Worker "1..*" --> "1" MonitorInterface : invoca fireTransition() >
 RedPetri ..> ConfigPagos : lee la configuración
-InvariantChecker ..> Logger : lee su archivo
+PriorityPolicy *-- "1" RandomPolicy : delega elegir()
+PriorityPolicy ..> ConfigPagos : usa T1, T4, T6
+InvariantChecker +-- ResultadoConteo
+InvariantChecker ..> Logger : lee el archivo que genera
 
 Main ..> ConfigPagos : instancia
 Main ..> RedPetri : instancia
