@@ -1,0 +1,124 @@
+@startuml Diagrama de Secuencia - Disparo de Transición
+
+skinparam dpi 150
+
+title Diagrama de Secuencia - Disparo de una transición en el Monitor (con Política y paso de testigo)
+
+autonumber
+actor "Worker (Hilo)" as W
+participant "Monitor" as M
+participant "Mutex" as X
+participant "RedPetri" as R
+participant "Politica" as P
+participant "Colas" as C
+participant "Logger" as L
+
+== 1. Preparación fuera del Monitor ==
+opt Transición temporal (α > 0)
+    W -> W : Thread.sleep(α)\n(espera fuera del monitor)
+end
+
+== 2. Disparo en el Monitor ==
+W -> M : fireTransition(t)
+M -> X : adquirir()
+X --> M
+
+loop Reintenta hasta disparar t o hasta que la red finalice
+    M -> R : isFinished()
+    R --> M : finalizada?
+
+    alt Caso 0: la red ya finalizó
+        M -> X : liberar()
+        M --> W : false
+        note right of W : El Worker termina su run()
+
+    else La red sigue en ejecución
+        M -> R : getSensitisedTransitions()
+        R --> M : sensibilizadas[]
+        M -> P : permitidas(sensibilizadas[])
+        note right of P
+            RandomPolicy: devuelve una copia de sensibilizadas[].
+            PriorityPolicy: si T4 está sensibilizada y el sorteo
+            es menor que probPrioridad, pone en false a T1 y T6
+            (aunque estén sensibilizadas).
+        end note
+        P --> M : permitidas[]
+
+        alt Caso A: permitidas[t] == true (dispara)
+            M -> R : fire(t)
+            note right of R
+                Actualiza el marcado y verifica los
+                invariantes de plaza (Req. 12).
+            end note
+            R --> M
+            M -> L : logTransition(t)
+            note right of L : Escribe "T<t> <timestamp>" en el log
+
+            M -> R : isFinished()
+            R --> M : finalizada?
+
+            alt Caso A1: con este disparo la red finalizó (T9 llegó a 200)
+                M -> C : despertarTodos()
+                note over M, C
+                    Abre todas las colas para que los hilos
+                    dormidos salgan y terminen.
+                end note
+                M -> X : liberar()
+            else Caso A2: la red sigue
+                group signalNext() [paso de testigo o liberación]
+                    M -> R : getSensitisedTransitions()
+                    R --> M : sensibilizadas[]
+                    M -> P : permitidas(sensibilizadas[])
+                    P --> M : permitidas[]
+                    note over M : candidatas[] = permitidas[] con esperando[t] > 0
+                    alt Hay candidatas
+                        M -> P : elegir(candidatas[])
+                        P --> M : elegida
+                        M -> C : despertar(elegida)
+                        note over M, C
+                            El mutex NO se libera: pasa directo
+                            al hilo despertado (paso de testigo).
+                        end note
+                    else No hay candidatas
+                        M -> X : liberar()
+                    end
+                end
+            end
+            M --> W : true (disparo completado)
+
+        else Caso B: permitidas[t] == false (espera)
+            note over M
+                Puede ser porque t no está sensibilizada, o porque está
+                sensibilizada pero la política la posterga.
+                Ej.: T1 sensibilizada y T4 también, con PriorityPolicy:
+                permitidas[T1] = false y el hilo de T1 debe esperar.
+            end note
+            M -> M : esperando[t]++
+            ref over M, R, P, C, X
+                signalNext(): cede el mutex a otro candidato
+                o lo libera antes de dormir (mismo protocolo del Caso A2)
+            end ref
+            M -> C : esperar(t)
+            note over W, C
+                El hilo queda bloqueado en la cola de t hasta que
+                otro hilo ejecute signalNext() o despertarTodos().
+            end note
+            ... Tiempo después ...
+            C --> M : despertado
+
+            alt Caso B1: lo despertó despertarTodos() (la red finalizó)
+                M --> W : false (sale sin tomar el mutex)
+                note right of W : El Worker termina su run()
+            else Caso B2: lo despertó signalNext()
+                note over M
+                    El hilo ya tiene el mutex (paso de testigo).
+                    Vuelve al inicio del loop y reevalúa
+                    sensibilizadas[] y permitidas[] antes de
+                    decidir si dispara t o vuelve a esperar.
+                end note
+            end
+        end
+    end
+end
+
+@enduml
