@@ -16,6 +16,9 @@ Las ocho corridas completaron 200 ciclos, validaron los invariantes del registro
 | B | `random` | 83 | 33 | 84 | 22,581 s | `ejecucion_random_2026-11-17_16-25-21-895.log` |
 | B | `priority 0.8` | 17 | 166 | 17 | 24,594 s | `ejecucion_priority-0.8_2026-11-17_16-25-45-045.log` |
 
+Los ocho registros utilizados en las mediciones se incluyen en `resultados/evidencias/`.
+Los nombres de archivo indicados en la tabla permiten identificar la evidencia de cada corrida.
+
 En las cuatro corridas de la configuración B, ambas políticas completaron 200 ciclos, validaron el registro, cerraron los nueve hilos y quedaron dentro de los 20–40 s. `random` tardó en promedio 22,81 s y `priority 0.8`, 24,60 s. Sumando las dos corridas de cada política, alto riesgo pasó de 99 de 400 pagos (24,75 %) con `random` a 330 de 400 (82,50 %) con `priority 0.8`. Tarjeta y transferencia también procesaron pagos en todas las corridas de B.
 
 ## Estimación analítica y comparación
