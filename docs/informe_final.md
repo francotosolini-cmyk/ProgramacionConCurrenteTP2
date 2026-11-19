@@ -672,5 +672,3 @@ Los registros utilizados para el análisis deben conservarse junto con los resul
 
 4. Grupo Programación Con Currente. *Corridas con tiempos activados y análisis temporal*.
    Documento del proyecto: `resultados/analisis/corridas-temporales.md`.
-
-5. Arias, Valentín. *Guía de clases y métodos — TP Final PCyP 2026*. Documento de trabajo del grupo, 11 de noviembre de 2026.
