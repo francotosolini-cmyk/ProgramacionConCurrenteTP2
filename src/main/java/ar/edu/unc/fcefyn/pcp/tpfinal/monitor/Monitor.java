@@ -28,74 +28,99 @@ public class Monitor implements MonitorInterface {
     public boolean fireTransition(int t){
         mutex.adquirir();
 
-        while (true) {
+        while (true){
+
+            // Acá el hilo siempre tiene el mutex (lo adquirió al entrar o lo recibió por
+            // paso de testigo). Si la red ya terminó, lo libera y sale sin despertar a nadie:
+            // despertarTodos() ya lo llamó el hilo que hizo el último disparo.
             if (redPetri.isFinished()) {
                 mutex.liberar();
                 return false;
             }
 
-            // Se consulta la política también al entrar (no solo al despertar), para que
-            // un hilo que llega con su transición sensibilizada no se saltee la prioridad.
-            // Contrato: permitidas() devuelve un subconjunto de las sensibilizadas y nunca
-            // todo en false si hay alguna sensibilizada.
-            boolean[] permitidas = politica.permitidas(redPetri.getSensitisedTransitions());
-            if (permitidas[t]) {
-                redPetri.fire(t);
+            boolean fireSuccesful = redPetri.fire(t);
+
+            //Disparo exitoso
+            if  (fireSuccesful){
+                // Registra el disparo en el log
                 logger.logTransition(t);
+
+                // Este disparo terminó la red: único lugar donde se llama a despertarTodos()
                 if (redPetri.isFinished()) {
-                    liberarTodos();       // despierta a todos para que terminen
+                    colas.despertarTodos();
                     mutex.liberar();
-                } else {
-                    signalNext();         // pasa el testigo o libera el mutex
+                    return true;
                 }
+
+                // Despierta a un hilo (paso de testigo) o libera el mutex si no hay ninguno
+                signalNext();
                 return true;
             }
+            else {
+                //Disparo no exitoso
+                esperando[t]++;
+                mutex.liberar();
+                colas.esperar(t);
 
-            // No puede disparar: se anota como esperando y, antes de dormir, pasa el
-            // testigo a otro candidato (o libera el mutex si no hay ninguno).
-            esperando[t]++;
-            signalNext();
-            colas.esperar(t);
-
-            // Despertado por liberarTodos(): no tiene el mutex, sale sin liberarlo
-            if (redPetri.isFinished()) {
-                return false;
+                // Despertado por despertarTodos(): no tiene el mutex, sale sin liberarlo
+                // ni volver a despertar a nadie.
+                if (redPetri.isFinished()) {
+                    return false;
+                }
+                // Despertado por despertar(): recibió el mutex (paso de testigo), reintenta
             }
-            // Despertado por signalNext(): recibió el mutex (paso de testigo), reintenta
         }
+    }
+
+
+    /**
+     * Calcula los hilos despertables: transiciones sensibilizadas que además
+     * tienen hilos anotados como esperando. Debe invocarse con el mutex tomado.
+     *
+     * @return boolean[] donde la posición t indica si hay un hilo despertable en t.
+     */
+    private boolean[] getWakeableThreads(){
+        boolean[] sensitised = redPetri.getSensitisedTransitions();
+        boolean[] waitingThreads = new boolean[redPetri.getTransicionesCount()];
+        for  (int i = 0; i < redPetri.getTransicionesCount(); i++) {
+            waitingThreads[i] = esperando[i]>0;
+        }
+
+        boolean[] wakeableThreads = new boolean[redPetri.getTransicionesCount()];
+
+        // Calcula los hilos despertables en un vector boolean
+        for (int i = 0; i < sensitised.length; i++) {
+            wakeableThreads[i] = waitingThreads[i] && sensitised[i];
+        }
+        return wakeableThreads;
     }
 
     /**
-     * Calcula las transiciones candidatas a despertar: aquellas sensibilizadas
-     * y permitidas por la política que además tienen hilos esperando en su cola.
+     * Si hay hilos para despertar, la política elige uno y se le pasa el mutex
+     * (paso de testigo). Si no hay ninguno, libera el mutex.
      * Debe invocarse con el mutex tomado.
-     *
-     * @return boolean[] donde la posición t indica si la transición t es candidata.
      */
-    private boolean[] getAwaitingSensitisedTransitions(){
-        boolean[] permitidas = politica.permitidas(redPetri.getSensitisedTransitions());
-        boolean[] candidatas = new boolean[permitidas.length];
-        for (int t = 0; t < candidatas.length; t++) {
-            candidatas[t] = permitidas[t] && t < esperando.length && esperando[t] > 0;
-        }
-        return candidatas;
-    }
-
     private void signalNext(){
-        boolean[] candidatas = getAwaitingSensitisedTransitions();
-        for (boolean c : candidatas) {
-            if (c) {
-                int elegida = politica.elegir(candidatas);
-                esperando[elegida]--;
-                colas.despertar(elegida); // el mutex pasa al despertado (paso de testigo)
-                return;
+        boolean[] wakeableThreads = getWakeableThreads();
+        boolean areThreadsWakeable = false;
+
+        // indica si hay por lo menos un hilo para despertar
+        for (boolean wakeable : wakeableThreads) {
+            if (wakeable) {
+                areThreadsWakeable = true;
+                break;
             }
         }
-        mutex.liberar();
-    }
 
-    private void liberarTodos(){
-        colas.despertarTodos();
-
+        if (areThreadsWakeable){
+            //Si hay uno o más hilos para despertar, la politica elije a quien despertar
+            int selectedThread = politica.elegir(wakeableThreads);
+            esperando[selectedThread]--;
+            colas.despertar(selectedThread);
+        }
+        else{
+            //Si no hay hilos para despertar, libre el mutex
+            mutex.liberar();
+        }
     }
 }
