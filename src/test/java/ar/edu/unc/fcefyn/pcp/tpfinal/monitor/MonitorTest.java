@@ -1,6 +1,12 @@
 package ar.edu.unc.fcefyn.pcp.tpfinal.monitor;
 
+import ar.edu.unc.fcefyn.pcp.tpfinal.hilos.AdmisionWorker;
+import ar.edu.unc.fcefyn.pcp.tpfinal.hilos.AltoRiesgoWorker;
+import ar.edu.unc.fcefyn.pcp.tpfinal.hilos.SalidaWorker;
+import ar.edu.unc.fcefyn.pcp.tpfinal.hilos.TarjetaWorker;
+import ar.edu.unc.fcefyn.pcp.tpfinal.hilos.TransferenciaWorker;
 import ar.edu.unc.fcefyn.pcp.tpfinal.politica.Politica;
+import ar.edu.unc.fcefyn.pcp.tpfinal.politica.PriorityPolicy;
 import ar.edu.unc.fcefyn.pcp.tpfinal.red.ConfigPagos;
 import ar.edu.unc.fcefyn.pcp.tpfinal.red.RedPetri;
 import ar.edu.unc.fcefyn.pcp.tpfinal.registro.Logger;
@@ -10,8 +16,10 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -23,9 +31,9 @@ class MonitorTest {
 
     /* ---------- Dobles de prueba ---------- */
 
-    /** Política sin restricciones: permite todo lo sensibilizado y elige la primera candidata. */
+    /** Política de prueba que elige la primera candidata disponible. */
     static class PoliticaPrimera implements Politica {
-        public boolean[] permitidas(boolean[] s) { return s.clone(); }
+        @Override
         public int elegir(boolean[] c) {
             for (int i = 0; i < c.length; i++) if (c[i]) return i;
             throw new IllegalStateException("elegir() sin candidatas");
@@ -200,6 +208,115 @@ class MonitorTest {
             colas.esperar(0); // rezagado: llega después del cierre y no debe bloquearse
             colas.esperar(2);
             assertFalse(colas.hayEsperando());
+        });
+    }
+
+    @Test
+    void monitorConTiemposAlfaYPriorityPolicyCompleta200Invariantes() throws InterruptedException {
+        long[] alphaCorto = {0, 0, 3, 3, 0, 4, 0, 3, 3, 0};
+        ConfigPagos config = new ConfigPagos("resultados/logs/test-ignorado.log", alphaCorto);
+        RedPetri red = new RedPetri(config);
+        LoggerExclusion log = new LoggerExclusion();
+        Monitor m = new Monitor(red, new PriorityPolicy(0.8), log, config.getAlphaTimes());
+
+        List<Thread> hilos = new ArrayList<>();
+        for (int i = 0; i < 3; i++) hilos.add(new Thread(new AdmisionWorker(m), "Admision-" + i));
+        hilos.add(new Thread(new TarjetaWorker(m), "Tarjeta-0"));
+        hilos.add(new Thread(new AltoRiesgoWorker(m), "AltoRiesgo-0"));
+        hilos.add(new Thread(new TransferenciaWorker(m), "Transferencia-0"));
+        for (int i = 0; i < 3; i++) hilos.add(new Thread(new SalidaWorker(m), "Salida-" + i));
+
+        ejecutar(hilos, red);
+        verificarFinal(red, log);
+    }
+
+    @Test
+    void monitorRespetaVentanaTemporalAntesDeDisparar() {
+        long[] alpha = {0, 0, 40, 0, 0, 0, 0, 0, 0, 0};
+        RedPetri red = new RedPetri(new ConfigPagos());
+        LoggerExclusion log = new LoggerExclusion();
+        Monitor m = new Monitor(red, new PoliticaPrimera(), log, alpha);
+
+        assertTrue(m.fireTransition(ConfigPagos.T0));
+        long antesDeSensibilizarT2 = System.nanoTime();
+        assertTrue(m.fireTransition(ConfigPagos.T1));
+        assertTrue(m.fireTransition(ConfigPagos.T2));
+        long transcurridoMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - antesDeSensibilizarT2);
+
+        assertTrue(transcurridoMs >= 40, "T2 debió esperar al menos 40 ms, esperó " + transcurridoMs + " ms");
+    }
+
+    @Test
+    void dosHilosEnMismaTransicionTemporalNoDuplicanEsperaDeVentana() throws InterruptedException {
+        long[] alpha = {60, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        RedPetri red = new RedPetri(new ConfigPagos());
+        LoggerExclusion log = new LoggerExclusion();
+        Monitor m = new Monitor(red, new PoliticaPrimera(), log, alpha);
+
+        CountDownLatch arranque = new CountDownLatch(1);
+        AtomicBoolean r1 = new AtomicBoolean(false);
+        AtomicBoolean r2 = new AtomicBoolean(false);
+
+        Thread h1 = new Thread(() -> {
+            try {
+                arranque.await();
+                r1.set(m.fireTransition(ConfigPagos.T0));
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        Thread h2 = new Thread(() -> {
+            try {
+                arranque.await();
+                r2.set(m.fireTransition(ConfigPagos.T0));
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        long inicioNs = System.nanoTime();
+        h1.start();
+        h2.start();
+        arranque.countDown();
+        h1.join(3000);
+        h2.join(3000);
+        long totalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - inicioNs);
+
+        assertFalse(h1.isAlive());
+        assertFalse(h2.isAlive());
+        assertTrue(r1.get());
+        assertTrue(r2.get());
+        assertEquals(2, red.getFireCount(ConfigPagos.T0));
+        assertTrue(totalMs >= 120, "Dos disparos secuenciales con α=60 ms debían demorar >= 120 ms, demoró " + totalMs + " ms");
+    }
+
+    @Test
+    void hiloInterrumpidoDuranteEsperaDeVentanaSaleConFalseYLimpiaFlag() {
+        long[] alpha = {150, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        RedPetri red = new RedPetri(new ConfigPagos());
+        LoggerExclusion log = new LoggerExclusion();
+        Monitor m = new Monitor(red, new PoliticaPrimera(), log, alpha);
+
+        AtomicBoolean resultado = new AtomicBoolean(true);
+        AtomicBoolean flagInterrumpido = new AtomicBoolean(false);
+
+        assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
+            Thread hilo = new Thread(() -> {
+                resultado.set(m.fireTransition(ConfigPagos.T0));
+                flagInterrumpido.set(Thread.currentThread().isInterrupted());
+            });
+            hilo.start();
+            Thread.sleep(25);
+            hilo.interrupt();
+            hilo.join();
+
+            assertFalse(resultado.get());
+            assertTrue(flagInterrumpido.get());
+            assertEquals(0, red.getFireCount(ConfigPagos.T0));
+
+            // Verifica que el mutex fue liberado y esperandoVentana[T0] fue limpiado
+            assertTrue(m.fireTransition(ConfigPagos.T0));
+            assertEquals(1, red.getFireCount(ConfigPagos.T0));
         });
     }
 }
