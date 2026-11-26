@@ -55,7 +55,7 @@ public class Monitor implements MonitorInterface {
                 if (ventana == ControlTemporal.ResultadoVentana.ANTES_DE_VENTANA) {
                     long espera = control.tiempoEspera(t);
                     control.setEsperandoVentana(t);
-                    signalNext();                                   // cede el testigo o libera el mutex
+                    mutex.liberar();                                 // libera el mutex
                     boolean interrumpido = control.dormir(espera);  // duerme fuera del mutex
                     mutex.adquirir();
                     control.limpiarEsperandoVentana(t);             // el flag se baja después del acquire

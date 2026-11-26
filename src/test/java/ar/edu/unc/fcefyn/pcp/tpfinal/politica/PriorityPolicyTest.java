@@ -4,51 +4,49 @@ import org.junit.jupiter.api.Test;
 
 import ar.edu.unc.fcefyn.pcp.tpfinal.red.ConfigPagos;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class PriorityPolicyTest {
-    private final PriorityPolicy priorityPolicy = new PriorityPolicy(1.0);
-    private final PriorityPolicy priorityPolicy_2 = new PriorityPolicy(0.0);
+    private final PriorityPolicy priorityPolicy = new PriorityPolicy(ConfigPagos.T4);
+
     @Test
-    public void T4Habilitada(){
-        boolean[] sensibilizadas = new boolean[10];
-        sensibilizadas[ConfigPagos.T0] = true;
-        sensibilizadas[ConfigPagos.T1] = true;
-        sensibilizadas[ConfigPagos.T4] = true;
-        sensibilizadas[ConfigPagos.T6] = true;
-        sensibilizadas[ConfigPagos.T9] = true;
-        boolean[] permitidas = priorityPolicy.permitidas(sensibilizadas);
-        boolean[] esperado = new boolean[10];
-        esperado[ConfigPagos.T0] = true;
-        esperado[ConfigPagos.T4] = true;
-        esperado[ConfigPagos.T9] = true;
-        assertArrayEquals(esperado, permitidas);
-        assertTrue(sensibilizadas[ConfigPagos.T1]);
-        assertTrue(sensibilizadas[ConfigPagos.T6]);
+    public void prioritariaCandidataSeEligeSiempre() {
+        boolean[] candidatas = new boolean[10];
+        candidatas[ConfigPagos.T0] = true;
+        candidatas[ConfigPagos.T1] = true;
+        candidatas[ConfigPagos.T4] = true;
+        candidatas[ConfigPagos.T6] = true;
+        candidatas[ConfigPagos.T9] = true;
+        for (int i = 0; i < 10_000; i++) {
+            assertEquals(ConfigPagos.T4, priorityPolicy.elegir(candidatas));
+        }
     }
+
     @Test
-    public void T4Deshabilitada(){
-        boolean[] sensibilizadas = new boolean[10];
-        sensibilizadas[ConfigPagos.T1] = true;
-        sensibilizadas[ConfigPagos.T6] = true;
-        boolean[] permitidas = priorityPolicy.permitidas(sensibilizadas);
-        boolean[] esperado = new boolean[10];
-        esperado[ConfigPagos.T1] = true;
-        esperado[ConfigPagos.T6] = true;
-        assertArrayEquals(esperado, permitidas);
+    public void prioritariaNoCandidataEligeEntreLasRestantes() {
+        boolean[] candidatas = new boolean[10];
+        candidatas[ConfigPagos.T1] = true;
+        candidatas[ConfigPagos.T6] = true;
+        int t1 = 0;
+        int t6 = 0;
+        for (int i = 0; i < 10_000; i++) {
+            int elegida = priorityPolicy.elegir(candidatas);
+            assertTrue(elegida == ConfigPagos.T1 || elegida == ConfigPagos.T6);
+            if (elegida == ConfigPagos.T1) t1++; else t6++;
+        }
+        // Sorteo uniforme: ambas deben salir una cantidad comparable de veces
+        assertTrue(t1 > 4_000 && t6 > 4_000, "t1=" + t1 + " t6=" + t6);
     }
+
     @Test
-    public void T4HabilitadaPeroProbabilidadCero(){
-        boolean[] sensibilizadas = new boolean[10];
-        sensibilizadas[ConfigPagos.T1] = true;
-        sensibilizadas[ConfigPagos.T4] = true;
-        sensibilizadas[ConfigPagos.T6] = true;
-        boolean[] permitidas = priorityPolicy_2.permitidas(sensibilizadas);
-        boolean[] esperado = new boolean[10];
-        esperado[ConfigPagos.T1] = true;
-        esperado[ConfigPagos.T4] = true;
-        esperado[ConfigPagos.T6] = true;
-        assertArrayEquals(esperado, permitidas);
+    public void sinCandidatasDevuelveMenosUno() {
+        assertEquals(-1, priorityPolicy.elegir(new boolean[10]));
+    }
+
+    @Test
+    public void indiceNegativoEsInvalido() {
+        assertThrows(IllegalArgumentException.class, () -> new PriorityPolicy(-1));
     }
 }

@@ -15,7 +15,7 @@ Linux / macOS:
 ```bash
 ./mvnw package
 java -jar target/tpfinal.jar random
-java -jar target/tpfinal.jar priority 0.8
+java -jar target/tpfinal.jar priority
 ```
 
 Windows:
@@ -23,7 +23,7 @@ Windows:
 ```bat
 .\mvnw.cmd package
 java -jar .\target\tpfinal.jar random
-java -jar .\target\tpfinal.jar priority 0.8
+java -jar .\target\tpfinal.jar priority
 ```
 
 Sin argumentos se utiliza la política `random`. Con `priority` se prioriza el flujo de alto riesgo. La probabilidad es opcional, debe estar entre 0 y 1 y su valor predeterminado es `0.8`.
