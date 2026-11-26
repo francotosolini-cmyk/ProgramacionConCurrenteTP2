@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PriorityPolicyTest {
 
@@ -12,7 +13,7 @@ class PriorityPolicyTest {
 
     @Test
     void cuandoT4EsCandidataSiempreLaElige() {
-        PriorityPolicy policy = new PriorityPolicy();
+        PriorityPolicy policy = new PriorityPolicy(ConfigPagos.T4);
         boolean[] candidatas = new boolean[ConfigPagos.TRANSICIONES_COUNT];
         candidatas[ConfigPagos.T0] = true;
         candidatas[ConfigPagos.T1] = true;
@@ -27,7 +28,7 @@ class PriorityPolicyTest {
 
     @Test
     void cuandoT4NoEsCandidataEligeEntreLasRestantes() {
-        PriorityPolicy policy = new PriorityPolicy();
+        PriorityPolicy policy = new PriorityPolicy(ConfigPagos.T4);
         boolean[] candidatas = new boolean[ConfigPagos.TRANSICIONES_COUNT];
         candidatas[ConfigPagos.T1] = true;
         candidatas[ConfigPagos.T6] = true;
@@ -41,10 +42,27 @@ class PriorityPolicyTest {
 
     @Test
     void cuandoNoHayCandidatasDevuelveMenosUno() {
-        PriorityPolicy policy = new PriorityPolicy();
+        PriorityPolicy policy = new PriorityPolicy(ConfigPagos.T4);
         boolean[] candidatas = new boolean[ConfigPagos.TRANSICIONES_COUNT];
 
         assertEquals(-1, policy.elegir(candidatas));
+    }
+
+    @Test
+    void indiceNegativoEsInvalido() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new PriorityPolicy(-1));
+    }
+
+    @Test
+    void priorizaLaTransicionRecibidaPorConstructor() {
+        PriorityPolicy policy = new PriorityPolicy(ConfigPagos.T1);
+
+        boolean[] candidatas = new boolean[ConfigPagos.TRANSICIONES_COUNT];
+        candidatas[ConfigPagos.T1] = true;
+        candidatas[ConfigPagos.T4] = true;
+
+        assertEquals(ConfigPagos.T1, policy.elegir(candidatas));
     }
 
 }

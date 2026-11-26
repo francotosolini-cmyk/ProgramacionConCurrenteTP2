@@ -32,7 +32,7 @@ public class Main {
             return;
         }
         String etiqueta = "random";
-        if (politica instanceof PriorityPolicy ) {
+        if (politica instanceof PriorityPolicy) {
             etiqueta = "priority";
         }
 
@@ -114,15 +114,16 @@ public class Main {
     }
 
     /**
-    * Crea la política indicada por los argumentos.
-    * Sin argumentos utiliza random.
-    */
+ * Crea la política indicada por los argumentos.
+ * Sin argumentos utiliza random.
+ */
     private static Politica crearPolitica(String[] args) {
         if (args.length > 1) {
             throw new IllegalArgumentException(
                 "Se admite un solo argumento: random o priority"
             );
         }
+
         String nombre = "random";
         if (args.length == 1) {
             nombre = args[0].toLowerCase(Locale.ROOT);
@@ -132,9 +133,11 @@ public class Main {
             case "random":
                 return new RandomPolicy();
             case "priority":
-                return new PriorityPolicy();
+                return new PriorityPolicy(ConfigPagos.T4);
             default:
-                throw new IllegalArgumentException("Política desconocida: " + nombre);
+                throw new IllegalArgumentException(
+                    "Política desconocida: " + nombre
+                );
         }
     }
 }

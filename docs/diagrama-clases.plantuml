@@ -3,21 +3,21 @@
 skinparam dpi 90
 
 class Main {
-  - {static} PROB_PRIORIDAD_DEFECTO : double = 0.8
   + {static} main(args: String[]): void
   - {static} crearPolitica(args: String[]): Politica
 }
 
 note right of Main
-  args: random | priority [probabilidad].
-  Los args se validan ANTES de crear el Logger
-  (argumentos inválidos: exit 64, sin tocar logs).
-  Arma el nombre del log con política, probabilidad
-  (getProbPrioridad()) y fecha. Pasa alphaTimes al
-  Monitor. Crea 9 hilos (3+1+1+1+3), hace join,
+  args: random | priority.
+  Valida los argumentos antes de crear el Logger.
+  Argumentos inválidos: exit 64, sin crear el log.
+  Configura T4 como transición prioritaria.
+  Arma el nombre del log con política y fecha.
+  Pasa alphaTimes al Monitor.
+  Crea 9 hilos (3+1+1+1+3), hace join,
   cierra el logger y valida el log.
-  Exit 2 si el log no es válido; exit 1 si un
-  hilo muere (UncaughtExceptionHandler).
+  Exit 2 si el log no es válido; exit 1 si
+  un hilo muere (UncaughtExceptionHandler).
 end note
 
 class ConfigPagos {
@@ -120,7 +120,7 @@ note right of Monitor
   Al entrar ya NO consulta la política: evalúa
   redPetri.isSensitised(t) y !hayAlguienEsperandoVentana(t).
   Si está en ANTES_DE_VENTANA, marca esperandoVentana[t],
-  cede el testigo (signalNext), duerme fuera del mutex,
+  libera el mutex y duerme fuera de la sección crítica,
   readquiere el mutex, limpia el flag y reevalúa.
   Si no está sensibilizada (o ventana ocupada), se anota
   en esperando[t], libera el mutex y duerme en colas.esperar(t).
@@ -194,11 +194,13 @@ interface Politica {
 }
 
 note right of Politica
-  elegir(): decide a qué transición despertar entre las
-  candidatas (sensibilizadas con hilos esperando y sin
-  otro hilo durmiendo su ventana). El Monitor la invoca
-  una sola vez por disparo, desde signalNext(), y solo
-  cuando hay al menos una candidata. Devuelve -1 si no hay.
+  elegir(): selecciona una transición entre las candidatas:
+  sensibilizadas, con hilos esperando y sin otro hilo
+  durmiendo su ventana temporal.
+  El Monitor la consulta como máximo una vez después
+  de un disparo exitoso, desde signalNext(),
+  cuando hay al menos una candidata.
+  Devuelve -1 si no hay candidatas.
 end note
 
 class RandomPolicy implements Politica {
@@ -212,18 +214,18 @@ end note
 
 class PriorityPolicy implements Politica {
   - politicaAleatoria : RandomPolicy
-  - probPrioridad : double
-  + PriorityPolicy(probPrioridad: double)
+  - transicionPrioritaria : int
+  + PriorityPolicy(transicionPrioritaria: int)
   + elegir(candidatas: boolean[]): int
-  + getProbPrioridad(): double
+  + getTransicionPrioritaria(): int
 }
 
 note bottom of PriorityPolicy
-  Prioriza el flujo de alto riesgo en elegir(): si T4 es
-  candidata, con probabilidad probPrioridad la elige; si no,
-  delega en RandomPolicy.elegir(). Lanza IllegalArgumentException
-  si probPrioridad no está en [0, 1].
-  Único lugar (junto con ConfigPagos) que conoce T4.
+  Si la transición prioritaria es candidata,
+  siempre la elige. En caso contrario, delega
+  en RandomPolicy.elegir().
+  Recibe un índice no negativo por constructor.
+  Main configura T4 para esta aplicación.
 end note
 
 abstract class Worker implements Runnable {
@@ -332,7 +334,6 @@ ControlTemporal +-- ResultadoVentana
 Worker "1..*" --> "1" MonitorInterface : invoca fireTransition() >
 RedPetri ..> ConfigPagos : lee la configuración
 PriorityPolicy *-- "1" RandomPolicy : delega elegir()
-PriorityPolicy ..> ConfigPagos : usa T4
 InvariantChecker +-- ResultadoConteo
 InvariantChecker ..> Logger : lee el archivo que genera
 

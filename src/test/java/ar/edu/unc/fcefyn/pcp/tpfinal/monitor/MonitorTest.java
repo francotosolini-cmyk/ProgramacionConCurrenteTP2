@@ -250,7 +250,7 @@ class MonitorTest {
         ConfigPagos config = new ConfigPagos("resultados/logs/test-ignorado.log", alphaCorto);
         RedPetri red = new RedPetri(config);
         LoggerExclusion log = new LoggerExclusion();
-        Monitor m = new Monitor(red, new PriorityPolicy(), log, config.getAlphaTimes());
+        Monitor m = new Monitor(red, new PriorityPolicy(ConfigPagos.T4), log, config.getAlphaTimes());
 
         List<Thread> hilos = new ArrayList<>();
         for (int i = 0; i < 3; i++) hilos.add(new Thread(new AdmisionWorker(m), "Admision-" + i));
