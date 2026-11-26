@@ -63,7 +63,40 @@ class MonitorTest {
         }
     }
 
+    static class PoliticaConRegistro extends PoliticaPrimera {
+        private final LoggerExclusion log;
+        private int disparosUltimaConsulta = 0;
+        final AtomicBoolean consultaSinDisparo = new AtomicBoolean(false);
+
+        PoliticaConRegistro(LoggerExclusion log) {
+            this.log = log;
+        }
+
+        @Override
+        public int elegir(boolean[] candidatas) {
+            int disparosActuales = log.disparos.get();
+
+            if (disparosActuales <= disparosUltimaConsulta) {
+                consultaSinDisparo.set(true);
+            }
+
+            disparosUltimaConsulta = disparosActuales;
+            return super.elegir(candidatas);
+        }
+    }
+
     /* ---------- Utilidades ---------- */
+
+    private static void esperarEnCola(Thread hilo) throws InterruptedException {
+        long limite = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (hilo.getState() != Thread.State.WAITING
+                && hilo.isAlive() && System.nanoTime() < limite) {
+            Thread.sleep(1);
+        }
+
+        assertEquals(Thread.State.WAITING, hilo.getState(),
+                "El hilo no llegó a su cola: " + hilo.getName());
+    }
 
     /** Lanza los hilos, espera a que terminen y falla (con volcado de estado) si se cuelgan. */
     private static void ejecutar(List<Thread> hilos, RedPetri red) throws InterruptedException {
@@ -217,7 +250,7 @@ class MonitorTest {
         ConfigPagos config = new ConfigPagos("resultados/logs/test-ignorado.log", alphaCorto);
         RedPetri red = new RedPetri(config);
         LoggerExclusion log = new LoggerExclusion();
-        Monitor m = new Monitor(red, new PriorityPolicy(0.8), log, config.getAlphaTimes());
+        Monitor m = new Monitor(red, new PriorityPolicy(), log, config.getAlphaTimes());
 
         List<Thread> hilos = new ArrayList<>();
         for (int i = 0; i < 3; i++) hilos.add(new Thread(new AdmisionWorker(m), "Admision-" + i));
@@ -318,5 +351,55 @@ class MonitorTest {
             assertTrue(m.fireTransition(ConfigPagos.T0));
             assertEquals(1, red.getFireCount(ConfigPagos.T0));
         });
+    }
+    @Test
+    void noConsultaPoliticaAlEsperarLaVentanaTemporal()
+            throws InterruptedException {
+
+        long[] alpha = new long[ConfigPagos.TRANSICIONES_COUNT];
+        alpha[ConfigPagos.T4] = 1000;
+
+        RedPetri red = new RedPetri(new ConfigPagos());
+        LoggerExclusion log = new LoggerExclusion();
+        PoliticaConRegistro politica = new PoliticaConRegistro(log);
+        Monitor m = new Monitor(red, politica, log, alpha);
+
+        Thread riesgo = new Thread(() -> {
+            m.fireTransition(ConfigPagos.T4);
+            m.fireTransition(ConfigPagos.T5);
+        }, "Riesgo-prueba");
+
+        Thread transferencia = new Thread(() -> {
+            m.fireTransition(ConfigPagos.T6);
+            m.fireTransition(ConfigPagos.T7);
+            m.fireTransition(ConfigPagos.T8);
+        }, "Transferencia-prueba");
+
+        riesgo.setDaemon(true);
+        transferencia.setDaemon(true);
+
+        riesgo.start();
+        esperarEnCola(riesgo);
+
+        transferencia.start();
+        esperarEnCola(transferencia);
+
+        assertEquals(0, log.disparos.get());
+        assertFalse(politica.consultaSinDisparo.get());
+
+        assertTrue(m.fireTransition(ConfigPagos.T0));
+        assertTrue(m.fireTransition(ConfigPagos.T0));
+
+        riesgo.join(5000);
+        transferencia.join(5000);
+
+        assertFalse(riesgo.isAlive(), "El hilo de alto riesgo no terminó");
+        assertFalse(transferencia.isAlive(),
+                "El hilo de transferencia no terminó");
+
+        assertEquals(7, log.disparos.get());
+
+        assertFalse(politica.consultaSinDisparo.get(),
+                "Se consultó a la política sin un nuevo disparo exitoso");
     }
 }

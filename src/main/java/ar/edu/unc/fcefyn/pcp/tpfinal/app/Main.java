@@ -20,8 +20,6 @@ import java.time.format.DateTimeFormatter;
 
 public class Main {
 
-    private static final double PROB_PRIORIDAD_DEFECTO = 0.8;
-
     public static void main(String[] args) throws InterruptedException {
         // Los args se validan antes de crear el Logger
         Politica politica;
@@ -29,13 +27,13 @@ public class Main {
             politica = crearPolitica(args);
         } catch (IllegalArgumentException e) {
             System.err.println(e.getMessage());
-            System.err.println("Uso: Main [random | priority [probabilidad entre 0 y 1]]");
+            System.err.println("Uso: Main [random | priority]");
             System.exit(64);
             return;
         }
         String etiqueta = "random";
-        if (politica instanceof PriorityPolicy prioridad) {
-            etiqueta = "priority-" + prioridad.getProbPrioridad();
+        if (politica instanceof PriorityPolicy ) {
+            etiqueta = "priority";
         }
 
         String fecha = LocalDateTime.now() //Obtiene la fecha y hora actual y la formatea como "yyyy-MM-dd_HH-mm-ss-SSS"
@@ -116,32 +114,27 @@ public class Main {
     }
 
     /**
-     * Crea la política según los argumentos: {@code random} (por defecto) o
-     * {@code priority [probabilidad]}.
-     *
-     * @throws IllegalArgumentException si la política es desconocida, sobran parámetros o la
-     *                                  probabilidad no es un número entre 0 y 1.
-     */
+    * Crea la política indicada por los argumentos.
+    * Sin argumentos utiliza random.
+    */
     private static Politica crearPolitica(String[] args) {
-        String nombre = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "random";
+        if (args.length > 1) {
+            throw new IllegalArgumentException(
+                "Se admite un solo argumento: random o priority"
+            );
+        }
+        String nombre = "random";
+        if (args.length == 1) {
+            nombre = args[0].toLowerCase(Locale.ROOT);
+        }
+
         switch (nombre) {
             case "random":
-                if (args.length > 1) {
-                    throw new IllegalArgumentException("La política random no recibe parámetros");
-                }
                 return new RandomPolicy();
             case "priority":
-                double prob = PROB_PRIORIDAD_DEFECTO;
-                if (args.length > 1) {
-                    try {
-                        prob = Double.parseDouble(args[1]);
-                    } catch (NumberFormatException e) {
-                        throw new IllegalArgumentException("Probabilidad inválida: " + args[1]);
-                    }
-                }
-                return new PriorityPolicy(prob); // lanza IllegalArgumentException si está fuera de [0,1]
+                return new PriorityPolicy();
             default:
-                throw new IllegalArgumentException("Política desconocida: " + args[0]);
+                throw new IllegalArgumentException("Política desconocida: " + nombre);
         }
     }
 }
