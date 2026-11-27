@@ -1,0 +1,15 @@
+T2, T3 y T7 = 100 ms; T5 = 120 ms; T8 = 150 ms; restantes = 0 ms.
+e2c2c2d8f180e069cdf4ccfc86d8be36a2cf98b3
+diff --git a/src/main/java/ar/edu/unc/fcefyn/pcp/tpfinal/red/ConfigPagos.java b/src/main/java/ar/edu/unc/fcefyn/pcp/tpfinal/red/ConfigPagos.java
+index dd775e1..3e695eb 100644
+--- a/src/main/java/ar/edu/unc/fcefyn/pcp/tpfinal/red/ConfigPagos.java
++++ b/src/main/java/ar/edu/unc/fcefyn/pcp/tpfinal/red/ConfigPagos.java
+@@ -65,7 +65,7 @@ public class ConfigPagos {
+             120,  // T5
+             0,    // T6
+             100,   // T7
+-            100,   // T8
++            150,   // T8
+             0     // T9
+         });
+     }

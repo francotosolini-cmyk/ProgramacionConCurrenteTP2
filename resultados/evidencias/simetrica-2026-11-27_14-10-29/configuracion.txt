@@ -1,0 +1,2 @@
+T2, T3, T7 y T8 = 100 ms; T5 = 120 ms; restantes = 0 ms.
+e2c2c2d8f180e069cdf4ccfc86d8be36a2cf98b3
