@@ -1,0 +1,8 @@
+Red finalizada (T9 == 200): true
+Invariantes de transición válidos: true
+Distribución por invariante (total 200):
+  Tarjeta       = 106 ( 53,00%)
+  Alto Riesgo   =   6 (  3,00%)
+  Transferencia =  88 ( 44,00%)
+Todos los 9 hilos terminaron en 24256 ms.
+Registro: ejecucion_priority_2026-11-27_14-18-19-903.log
