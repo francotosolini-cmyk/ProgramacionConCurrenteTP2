@@ -2,23 +2,19 @@
 
 skinparam dpi 150
 
-title Diagrama de Secuencia - Disparo de una transición en el Monitor (con Política y paso de testigo)
+title Diagrama de Secuencia - Disparo de una transición en el Monitor (con ControlTemporal, Política y paso de testigo)
 
 autonumber
 actor "Worker (Hilo)" as W
 participant "Monitor" as M
 participant "Mutex" as X
 participant "RedPetri" as R
+participant "ControlTemporal" as T
 participant "Politica" as P
 participant "Colas" as C
 participant "Logger" as L
 
-== 1. Preparación fuera del Monitor ==
-opt Transición temporal (α > 0)
-    W -> W : Thread.sleep(α)\n(espera fuera del monitor)
-end
-
-== 2. Disparo en el Monitor ==
+== Disparo en el Monitor ==
 W -> M : fireTransition(t)
 M -> X : adquirir()
 X --> M
@@ -33,71 +29,105 @@ loop Reintenta hasta disparar t o hasta que la red finalice
         note right of W : El Worker termina su run()
 
     else La red sigue en ejecución
-        M -> R : getSensitisedTransitions()
-        R --> M : sensibilizadas[]
-        M -> P : permitidas(sensibilizadas[])
-        note right of P
-            RandomPolicy: devuelve una copia de sensibilizadas[].
-            PriorityPolicy: si T4 está sensibilizada y el sorteo
-            es menor que probPrioridad, pone en false a T1 y T6
-            (aunque estén sensibilizadas).
-        end note
-        P --> M : permitidas[]
+        M -> R : isSensitised(t)
+        R --> M : sensibilizadaRed?
+        M -> T : hayAlguienEsperandoVentana(t)
+        T --> M : ocupada?
+        note over M : sensibilizada = sensibilizadaRed && !ocupada
 
-        alt Caso A: permitidas[t] == true (dispara)
-            M -> R : fire(t)
-            note right of R
-                Actualiza el marcado y verifica los
-                invariantes de plaza (Req. 12).
-            end note
-            R --> M
-            M -> L : logTransition(t)
-            note right of L : Escribe "T<t> <timestamp>" en el log
+        alt Caso A: sensibilizada == true
+            M -> T : evaluarVentanaTemporal(t)
+            T --> M : ventana (NO_TEMPORAL | ANTES_DE_VENTANA | DENTRO_DE_VENTANA)
 
-            M -> R : isFinished()
-            R --> M : finalizada?
-
-            alt Caso A1: con este disparo la red finalizó (T9 llegó a 200)
-                M -> C : despertarTodos()
-                note over M, C
-                    Abre todas las colas para que los hilos
-                    dormidos salgan y terminen.
+            alt Caso A1: ventana == ANTES_DE_VENTANA
+                M -> T : tiempoEspera(t)
+                T --> M : esperaMs
+                M -> T : setEsperandoVentana(t)
+                ref over M, R, T, P, C, X
+                    signalNext(): cede el testigo a otro candidato
+                    o libera el mutex (mismo protocolo del Caso A2b)
+                end ref
+                M -> T : dormir(esperaMs)
+                note over M, T
+                    Thread.sleep(esperaMs) fuera del mutex:
+                    otros hilos pueden avanzar mientras espera α.
                 end note
-                M -> X : liberar()
-            else Caso A2: la red sigue
-                group signalNext() [paso de testigo o liberación]
-                    M -> R : getSensitisedTransitions()
-                    R --> M : sensibilizadas[]
-                    M -> P : permitidas(sensibilizadas[])
-                    P --> M : permitidas[]
-                    note over M : candidatas[] = permitidas[] con esperando[t] > 0
-                    alt Hay candidatas
-                        M -> P : elegir(candidatas[])
-                        P --> M : elegida
-                        M -> C : despertar(elegida)
-                        note over M, C
-                            El mutex NO se libera: pasa directo
-                            al hilo despertado (paso de testigo).
+                T --> M : interrumpido?
+                M -> X : adquirir()
+                X --> M
+                M -> T : limpiarEsperandoVentana(t)
+
+                alt interrumpido == true
+                    M -> X : liberar()
+                    M --> W : false
+                    note right of W : El Worker conserva el flag interrupt y termina
+                else no interrumpido
+                    note over M
+                        Vuelve al inicio del loop (continue) y reevalúa
+                        si t sigue sensibilizada y ya abrió la ventana.
+                    end note
+                end
+
+            else Caso A2: NO_TEMPORAL o DENTRO_DE_VENTANA (dispara)
+                M -> R : getSensitisedTransitions()
+                R --> M : antes[]
+                M -> R : fire(t)
+                note right of R
+                    Actualiza el marcado y verifica los
+                    invariantes de plaza (Req. 12).
+                end note
+                R --> M : true
+                M -> R : getSensitisedTransitions()
+                R --> M : despues[]
+                M -> T : actualizarTimestamps(antes[], despues[], t)
+                M -> L : logTransition(t)
+                note right of L : Escribe "T<t> <timestamp>" en el log
+
+                M -> R : isFinished()
+                R --> M : finalizada?
+
+                alt Caso A2a: con este disparo la red finalizó (T9 llegó a 200)
+                    M -> C : despertarTodos()
+                    note over M, C
+                        Abre todas las colas para que los hilos
+                        dormidos salgan y terminen.
+                    end note
+                    M -> X : liberar()
+                else Caso A2b: la red sigue
+                    group signalNext() [paso de testigo o liberación]
+                        M -> R : getSensitisedTransitions()
+                        R --> M : sensibilizadas[]
+                        M -> T : hayAlguienEsperandoVentana(i)
+                        T --> M : ocupada[]
+                        note over M
+                            wakeable[i] = esperando[i] > 0
+                                && sensibilizadas[i] && !ocupada[i]
                         end note
-                    else No hay candidatas
-                        M -> X : liberar()
+                        alt Hay al menos un hilo despertable
+                            M -> P : elegir(wakeable[])
+                            note right of P
+                                RandomPolicy: sortea uniformemente.
+                                PriorityPolicy: si T4 es candidata, la elige
+                                con prob. probPrioridad; si no, delega en RandomPolicy.
+                            end note
+                            P --> M : elegida
+                            M -> M : esperando[elegida]--
+                            M -> C : despertar(elegida)
+                            note over M, C
+                                El mutex NO se libera: pasa directo
+                                al hilo despertado (paso de testigo).
+                            end note
+                        else No hay hilos despertables
+                            M -> X : liberar()
+                        end
                     end
                 end
+                M --> W : true (disparo completado)
             end
-            M --> W : true (disparo completado)
 
-        else Caso B: permitidas[t] == false (espera)
-            note over M
-                Puede ser porque t no está sensibilizada, o porque está
-                sensibilizada pero la política la posterga.
-                Ej.: T1 sensibilizada y T4 también, con PriorityPolicy:
-                permitidas[T1] = false y el hilo de T1 debe esperar.
-            end note
+        else Caso B: sensibilizada == false (no sensibilizada o ventana ocupada)
             M -> M : esperando[t]++
-            ref over M, R, P, C, X
-                signalNext(): cede el mutex a otro candidato
-                o lo libera antes de dormir (mismo protocolo del Caso A2)
-            end ref
+            M -> X : liberar()
             M -> C : esperar(t)
             note over W, C
                 El hilo queda bloqueado en la cola de t hasta que
@@ -106,15 +136,16 @@ loop Reintenta hasta disparar t o hasta que la red finalice
             ... Tiempo después ...
             C --> M : despertado
 
-            alt Caso B1: lo despertó despertarTodos() (la red finalizó)
+            M -> R : isFinished()
+            R --> M : finalizada?
+
+            alt Caso B1: la red finalizó (lo despertó despertarTodos())
                 M --> W : false (sale sin tomar el mutex)
                 note right of W : El Worker termina su run()
             else Caso B2: lo despertó signalNext()
                 note over M
                     El hilo ya tiene el mutex (paso de testigo).
-                    Vuelve al inicio del loop y reevalúa
-                    sensibilizadas[] y permitidas[] antes de
-                    decidir si dispara t o vuelve a esperar.
+                    Vuelve al inicio del loop y reevalúa t.
                 end note
             end
         end

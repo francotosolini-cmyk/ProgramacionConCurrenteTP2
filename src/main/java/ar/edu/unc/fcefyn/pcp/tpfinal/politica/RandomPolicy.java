@@ -3,10 +3,6 @@ import java.util.concurrent.ThreadLocalRandom; //Libreria para generar numeros a
 
 public class RandomPolicy implements Politica {
     @Override
-    public boolean[] permitidas(boolean[] sensibilizadas) {
-        return sensibilizadas.clone();
-    }
-    @Override
     public int elegir(boolean[] candidatas){
         int cantidad=0;
         for(int i =0;i<candidatas.length;i++){

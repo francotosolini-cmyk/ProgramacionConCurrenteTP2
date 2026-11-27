@@ -20,7 +20,7 @@ import java.time.format.DateTimeFormatter;
 
 public class Main {
 
-    private static final double PROB_PRIORIDAD_DEFECTO = 0.8; // ver si hay que cambiar
+    private static final double PROB_PRIORIDAD_DEFECTO = 0.8;
 
     public static void main(String[] args) throws InterruptedException {
         // Los args se validan antes de crear el Logger
@@ -34,15 +34,8 @@ public class Main {
             return;
         }
         String etiqueta = "random";
-        if (politica instanceof PriorityPolicy) { // Si es PriorityPolicy, se agrega la probabilidad a la etiqueta
-            double probabilidad;
-            if (args.length > 1) { // Si se pasó un segundo argumento, se usa como probabilidad
-                probabilidad = Double.parseDouble(args[1]);
-            } else {
-                probabilidad = PROB_PRIORIDAD_DEFECTO;
-            }
-
-            etiqueta = "priority-" + probabilidad;
+        if (politica instanceof PriorityPolicy prioridad) {
+            etiqueta = "priority-" + prioridad.getProbPrioridad();
         }
 
         String fecha = LocalDateTime.now() //Obtiene la fecha y hora actual y la formatea como "yyyy-MM-dd_HH-mm-ss-SSS"
@@ -66,26 +59,23 @@ public class Main {
 
         RedPetri redPetri = new RedPetri(config);
 
-        MonitorInterface monitor = new Monitor(redPetri, politica, logger);
-
-        // null p/ correr sin tiempos. Después cambiar null por config.getAlphaTimes()
-        long[] alphaTimes = config.getAlphaTimes();
+        MonitorInterface monitor = new Monitor(redPetri, politica, logger, config.getAlphaTimes());
 
         List<Thread> hilos = new ArrayList<>();
 
         // 3 hilos de Admisión (T0)
         for (int i = 0; i < 3; i++) {
-            hilos.add(new Thread(new AdmisionWorker(monitor, alphaTimes), "Admision-" + i));
+            hilos.add(new Thread(new AdmisionWorker(monitor), "Admision-" + i));
         }
 
         // 1 hilo por cada rama de procesamiento
-        hilos.add(new Thread(new TarjetaWorker(monitor, alphaTimes), "Tarjeta-0"));
-        hilos.add(new Thread(new AltoRiesgoWorker(monitor, alphaTimes), "AltoRiesgo-0"));
-        hilos.add(new Thread(new TransferenciaWorker(monitor, alphaTimes), "Transferencia-0"));
+        hilos.add(new Thread(new TarjetaWorker(monitor), "Tarjeta-0"));
+        hilos.add(new Thread(new AltoRiesgoWorker(monitor), "AltoRiesgo-0"));
+        hilos.add(new Thread(new TransferenciaWorker(monitor), "Transferencia-0"));
 
         // 3 hilos de Salida (T9)
         for (int i = 0; i < 3; i++) {
-            hilos.add(new Thread(new SalidaWorker(monitor, alphaTimes), "Salida-" + i));
+            hilos.add(new Thread(new SalidaWorker(monitor), "Salida-" + i));
         }
 
         long inicio = System.currentTimeMillis();
