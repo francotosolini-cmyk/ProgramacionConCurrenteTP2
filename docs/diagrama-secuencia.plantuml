@@ -43,10 +43,7 @@ loop Reintenta hasta disparar t o hasta que la red finalice
                 M -> T : tiempoEspera(t)
                 T --> M : esperaMs
                 M -> T : setEsperandoVentana(t)
-                ref over M, R, T, P, C, X
-                    signalNext(): cede el testigo a otro candidato
-                    o libera el mutex (mismo protocolo del Caso A2b)
-                end ref
+                M -> X : liberar()
                 M -> T : dormir(esperaMs)
                 note over M, T
                     Thread.sleep(esperaMs) fuera del mutex:
@@ -107,8 +104,9 @@ loop Reintenta hasta disparar t o hasta que la red finalice
                             M -> P : elegir(wakeable[])
                             note right of P
                                 RandomPolicy: sortea uniformemente.
-                                PriorityPolicy: si T4 es candidata, la elige
-                                con prob. probPrioridad; si no, delega en RandomPolicy.
+                                PriorityPolicy: si la prioritaria es candidata,
+                                la elige siempre; si no, delega en RandomPolicy.
+                                Main configura T4 como prioritaria.
                             end note
                             P --> M : elegida
                             M -> M : esperando[elegida]--
